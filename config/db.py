@@ -22,12 +22,11 @@ class MongoDB:
         self._client: Optional[MongoClient] = None
         self._database: Optional[Database] = None
         self._uri = os.getenv("MONGODB_URI")
+        self._db_name = os.getenv("MONGODB_DB_NAME")
         
         if not self._uri:
             logger.error("❌ Variable de entorno MONGODB_URI no configurada")
             raise ValueError("MONGODB_URI debe estar configurada en el archivo .env")
-        
-        self._db_name = self._extract_db_name(self._uri)
     
     def connect(self) -> bool:
         """
