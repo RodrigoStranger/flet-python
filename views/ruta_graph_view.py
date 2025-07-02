@@ -128,42 +128,9 @@ class RutaGraphView:
                                    size=14, color="grey"),
                         ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                         
-                        # Estadísticas del grafo
-                        ft.Row([
-                            ft.Container(
-                                content=ft.Column([
-                                    ft.Text("Nodos", size=12, weight=ft.FontWeight.BOLD),
-                                    ft.Text(str(self.graph.number_of_nodes()), size=16, color="blue"),
-                                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                                padding=10,
-                                border_radius=5,
-                                bgcolor="blue50",
-                                width=80
-                            ),
-                            ft.Container(
-                                content=ft.Column([
-                                    ft.Text("Aristas", size=12, weight=ft.FontWeight.BOLD),
-                                    ft.Text(str(self.graph.number_of_edges()), size=16, color="green"),
-                                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                                padding=10,
-                                border_radius=5,
-                                bgcolor="green50",
-                                width=80
-                            ),
-                            ft.Container(
-                                content=ft.Column([
-                                    ft.Text("Densidad", size=12, weight=ft.FontWeight.BOLD),
-                                    ft.Text(f"{nx.density(self.graph):.2f}" if self.graph.number_of_nodes() > 1 else "N/A", 
-                                           size=16, color="orange"),
-                                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                                padding=10,
-                                border_radius=5,
-                                bgcolor="orange50",
-                                width=80
-                            ),
-                        ], alignment=ft.MainAxisAlignment.START, spacing=10),
-                        
-                        # Controles de layout
+                        # Estadísticas del grafo (eliminadas: nodos, aristas, densidad)
+                        #
+                        # Controles de layout (eliminar botón análisis)
                         ft.Row([
                             ft.Dropdown(
                                 label="Layout del Grafo",
@@ -183,11 +150,7 @@ class RutaGraphView:
                                 on_click=self._regenerate_graph,
                                 icon=ft.Icons.REFRESH
                             ),
-                            ft.ElevatedButton(
-                                "📊 Análisis",
-                                on_click=self._show_connectivity_analysis,
-                                icon=ft.Icons.ANALYTICS
-                            ),
+                            # Botón de análisis eliminado
                         ], spacing=10),
                         
                         # Controles de Dijkstra
@@ -344,55 +307,62 @@ class RutaGraphView:
                 alignment=ft.alignment.center,
                 height=400
             )
-        
-        # Configurar matplotlib para usar Agg backend
         plt.style.use('default')
         fig, ax = plt.subplots(figsize=self.figure_size, dpi=100)
         fig.patch.set_facecolor('white')
-        
-        # Seleccionar layout
+
+        # Si hay ruta óptima, mostrar solo subgrafo de la ruta
+        if self.shortest_path and len(self.shortest_path) > 1:
+            sub_nodes = set(self.shortest_path)
+            sub_edges = set()
+            for i in range(len(self.shortest_path)-1):
+                sub_edges.add((self.shortest_path[i], self.shortest_path[i+1]))
+            G = nx.DiGraph()
+            for n in sub_nodes:
+                parada = next((p for p in self.paradas if p.id == n), None)
+                G.add_node(n, nombre=parada.nombre if parada else str(n))
+            for u, v in sub_edges:
+                data = self.graph.get_edge_data(u, v, default={})
+                G.add_edge(u, v, **data)
+            graph_to_draw = G
+        else:
+            graph_to_draw = self.graph
+
+        # Layout
         try:
             if self.current_layout == "spring":
-                pos = nx.spring_layout(self.graph, k=2, iterations=50)
+                pos = nx.spring_layout(graph_to_draw, k=2, iterations=50)
             elif self.current_layout == "circular":
-                pos = nx.circular_layout(self.graph)
+                pos = nx.circular_layout(graph_to_draw)
             elif self.current_layout == "kamada_kawai":
-                pos = nx.kamada_kawai_layout(self.graph)
+                pos = nx.kamada_kawai_layout(graph_to_draw)
             elif self.current_layout == "planar":
-                if nx.is_planar(self.graph):
-                    pos = nx.planar_layout(self.graph)
+                if nx.is_planar(graph_to_draw):
+                    pos = nx.planar_layout(graph_to_draw)
                 else:
-                    pos = nx.spring_layout(self.graph, k=2, iterations=50)
+                    pos = nx.spring_layout(graph_to_draw, k=2, iterations=50)
             elif self.current_layout == "shell":
-                pos = nx.shell_layout(self.graph)
+                pos = nx.shell_layout(graph_to_draw)
             else:
-                pos = nx.spring_layout(self.graph, k=2, iterations=50)
+                pos = nx.spring_layout(graph_to_draw, k=2, iterations=50)
         except:
-            pos = nx.spring_layout(self.graph, k=2, iterations=50)
-        
-        # Dibujar aristas con pesos (distancias)
+            pos = nx.spring_layout(graph_to_draw, k=2, iterations=50)
+
+        # Aristas y colores
         edge_labels = {}
         edge_colors = []
         edge_widths = []
-        
-        for edge in self.graph.edges(data=True):
+        for edge in graph_to_draw.edges(data=True):
             u, v, data = edge
             distancia = data.get('distancia', '')
             edge_labels[(u, v)] = f"{distancia} km"
-            
-            # Colorear aristas de la ruta más corta
-            if (self.shortest_path and 
-                len(self.shortest_path) > 1 and 
-                u in self.shortest_path and v in self.shortest_path and
-                abs(self.shortest_path.index(u) - self.shortest_path.index(v)) == 1):
+            if self.shortest_path and (u, v) in zip(self.shortest_path, self.shortest_path[1:]):
                 edge_colors.append('gold')
                 edge_widths.append(4)
             else:
                 edge_colors.append('red')
                 edge_widths.append(2)
-        
-        # Dibujar el grafo
-        nx.draw_networkx_edges(self.graph, pos, 
+        nx.draw_networkx_edges(graph_to_draw, pos, 
                              edge_color=edge_colors,
                              width=edge_widths,
                              arrows=True,
@@ -400,12 +370,10 @@ class RutaGraphView:
                              arrowstyle='->',
                              alpha=0.7,
                              ax=ax)
-        
-        # Dibujar nodos
+        # Nodos
         node_colors = []
         node_sizes = []
-        
-        for node in self.graph.nodes():
+        for node in graph_to_draw.nodes():
             if self.shortest_path and node == self.start_node:
                 node_colors.append('lightgreen')
                 node_sizes.append(1000)
@@ -418,29 +386,25 @@ class RutaGraphView:
             else:
                 node_colors.append('lightblue')
                 node_sizes.append(800)
-                
-        nx.draw_networkx_nodes(self.graph, pos,
+        nx.draw_networkx_nodes(graph_to_draw, pos,
                              node_color=node_colors,
                              node_size=node_sizes,
                              edgecolors='blue',
                              linewidths=2,
                              ax=ax)
-        
         # Etiquetas de nodos (IDs)
-        nx.draw_networkx_labels(self.graph, pos,
+        nx.draw_networkx_labels(graph_to_draw, pos,
                               font_size=10,
                               font_weight='bold',
                               font_color='black',
                               ax=ax)
-        
         # Etiquetas de aristas (distancias)
-        nx.draw_networkx_edge_labels(self.graph, pos, edge_labels,
+        nx.draw_networkx_edge_labels(graph_to_draw, pos, edge_labels,
                                    font_size=8,
                                    font_color='red',
                                    bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8),
                                    ax=ax)
-        
-        # Agregar nombres de paradas como texto adicional
+        # Nombres de paradas
         for node, (x, y) in pos.items():
             parada = next((p for p in self.paradas if p.id == node), None)
             if parada:
@@ -449,33 +413,25 @@ class RutaGraphView:
                        verticalalignment='top',
                        fontsize=9,
                        bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.7))
-        
-        # Configurar ejes y título
+        # Título
         title = f'Grafo de Ruta: {self.ruta.nombre if self.ruta else "Sin nombre"}'
         if self.shortest_path:
             path_str = " → ".join(str(node) for node in self.shortest_path)
             title += f'\nRuta Óptima: {path_str}'
-            
         ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
         ax.axis('off')
-        
-        # Ajustar layout
         plt.tight_layout()
-        
-        # Convertir a imagen base64
         buffer = io.BytesIO()
         fig.savefig(buffer, format='png', bbox_inches='tight', dpi=100, facecolor='white')
         buffer.seek(0)
         img_base64 = base64.b64encode(buffer.getvalue()).decode()
-        plt.close(fig)  # Importante: cerrar la figura para liberar memoria
-        
-        # Retornar imagen de Flet
+        plt.close(fig)
         return ft.Image(
             src_base64=img_base64,
             fit=ft.ImageFit.CONTAIN,
             border_radius=10
         )
-    
+
     def _on_back_click(self, e):
         """Maneja el click del botón de volver"""
         self.on_back()
@@ -585,16 +541,19 @@ class RutaGraphView:
         self._regenerate_graph(e)
     
     def _regenerate_graph(self, e):
-        """Regenera la visualización del grafo"""
-        self.show_message("Regenerando grafo...", "info")
-        try:
-            # Actualizar el contenedor del grafo
-            self.graph_container.content = self._create_graph_visualization()
-            if self._page_ref:
-                self._page_ref.update()
-            self.show_message("Grafo regenerado exitosamente", "success")
-        except Exception as ex:
-            self.show_message(f"Error al regenerar grafo: {str(ex)}", "error")
+        """Regenera la visualización del grafo y vuelve al estado original"""
+        self.shortest_path = None
+        self.start_node = None
+        self.end_node = None
+        if hasattr(self, 'start_dropdown') and self.start_dropdown.current:
+            self.start_dropdown.current.value = None
+        if hasattr(self, 'end_dropdown') and self.end_dropdown.current:
+            self.end_dropdown.current.value = None
+        self._update_calculate_button()
+        self.graph_container.content = self._create_graph_visualization()
+        if self._page_ref:
+            self._page_ref.update()
+        self.show_message("Grafo regenerado exitosamente", "success")
     
     def _show_connectivity_analysis(self, e):
         """Muestra análisis de conectividad del grafo"""
