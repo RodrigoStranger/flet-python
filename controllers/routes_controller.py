@@ -361,3 +361,94 @@ class RoutesController:
         
         finally:
             self.db.disconnect()
+    
+    def update_route(self, route_id: int, user_id: int, nombre: str, descripcion: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Actualiza una ruta existente
+        
+        Args:
+            route_id: ID de la ruta a actualizar
+            user_id: ID del usuario (para verificar permisos)
+            nombre: Nuevo nombre de la ruta
+            descripcion: Nueva descripción de la ruta (opcional)
+            
+        Returns:
+            Dict con resultado de la operación
+        """
+        try:
+            # Validar datos
+            if not nombre or not nombre.strip():
+                return {
+                    "success": False,
+                    "message": "El nombre de la ruta es obligatorio"
+                }
+            
+            # Conectar a la base de datos
+            if not self.db.connect():
+                return {
+                    "success": False,
+                    "message": "Error de conexión a la base de datos"
+                }
+            
+            # Verificar que la ruta existe y pertenece al usuario
+            check_query = """
+                SELECT COUNT(*) as count 
+                FROM rutas 
+                WHERE id = %s AND usuario_id = %s
+            """
+            
+            connection = self.db.get_connection()
+            cursor = connection.cursor(dictionary=True)
+            cursor.execute(check_query, (route_id, user_id))
+            result = cursor.fetchone()
+            
+            if result['count'] == 0:
+                cursor.close()
+                return {
+                    "success": False,
+                    "message": "Ruta no encontrada o no tienes permisos"
+                }
+            
+            # Verificar que no existe otra ruta con el mismo nombre para este usuario (excluyendo la ruta actual)
+            duplicate_query = """
+                SELECT COUNT(*) as count 
+                FROM rutas 
+                WHERE nombre = %s AND usuario_id = %s AND id != %s
+            """
+            cursor.execute(duplicate_query, (nombre.strip(), user_id, route_id))
+            duplicate_result = cursor.fetchone()
+            
+            if duplicate_result['count'] > 0:
+                cursor.close()
+                return {
+                    "success": False,
+                    "message": "Ya existe una ruta con ese nombre"
+                }
+            
+            # Actualizar la ruta
+            update_query = """
+                UPDATE rutas 
+                SET nombre = %s, descripcion = %s
+                WHERE id = %s AND usuario_id = %s
+            """
+            
+            cursor.execute(update_query, (nombre.strip(), descripcion, route_id, user_id))
+            connection.commit()
+            cursor.close()
+            
+            logger.info(f"Ruta actualizada: ID {route_id} -> {nombre.strip()}, Usuario {user_id}")
+            
+            return {
+                "success": True,
+                "message": "Ruta actualizada exitosamente"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error al actualizar ruta {route_id}: {e}")
+            return {
+                "success": False,
+                "message": "Error al actualizar la ruta"
+            }
+        
+        finally:
+            self.db.disconnect()

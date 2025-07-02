@@ -13,16 +13,20 @@ class DashboardView:
     Vista del dashboard principal
     """
     
-    def __init__(self, on_logout: Callable, on_create_route: Callable):
+    def __init__(self, on_logout: Callable, on_create_route: Callable, on_edit_route: Callable = None, on_delete_route: Callable = None):
         """
         Inicializa la vista del dashboard
         
         Args:
             on_logout: Callback para cuando se cierra sesión
             on_create_route: Callback para crear nueva ruta
+            on_edit_route: Callback para editar ruta existente
+            on_delete_route: Callback para eliminar ruta
         """
         self.on_logout = on_logout
         self.on_create_route = on_create_route
+        self.on_edit_route = on_edit_route
+        self.on_delete_route = on_delete_route
         self.user = None
         self.routes = []
         self.message_container = None
@@ -437,7 +441,12 @@ class DashboardView:
                         ft.Text(ruta.nombre, size=16, weight=ft.FontWeight.BOLD),
                         ft.Text(f"ID: {ruta.id}", size=10, color="grey"),
                     ], spacing=2, expand=True),
-                    ft.Text("⋮", size=16, color="grey")
+                    ft.IconButton(
+                        icon=ft.Icons.MORE_VERT,
+                        icon_size=20,
+                        tooltip="Opciones",
+                        on_click=lambda e, route=ruta: self._show_route_options(route)
+                    )
                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                 
                 # Descripción
@@ -614,3 +623,199 @@ class DashboardView:
             "last_login": "Primera vez",
             "user_level": "Básico"
         }
+    
+    def _show_route_options(self, ruta: Ruta):
+        """
+        Muestra las opciones para una ruta específica
+        
+        Args:
+            ruta: La ruta seleccionada
+        """
+        def handle_option(e):
+            dlg.open = False
+            self._page_ref.update()
+            
+            # Usar el título del ListTile para identificar la acción
+            if e.control.title.value == "Editar ruta":
+                self._edit_route(ruta)
+            elif e.control.title.value == "Eliminar ruta":
+                self._confirm_delete_route(ruta)
+        
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Text(f"Opciones para: {ruta.nombre}"),
+            content=ft.Column([
+                ft.ListTile(
+                    leading=ft.Icon(ft.Icons.EDIT, color="blue"),
+                    title=ft.Text("Editar ruta"),
+                    on_click=handle_option
+                ),
+                ft.ListTile(
+                    leading=ft.Icon(ft.Icons.DELETE, color="red"),
+                    title=ft.Text("Eliminar ruta"),
+                    on_click=handle_option
+                ),
+            ], tight=True),
+            actions=[
+                ft.TextButton("Cancelar", on_click=lambda e: self._close_dialog(dlg)),
+            ],
+        )
+        
+        self._page_ref.open(dlg)
+    
+    def _edit_route(self, ruta: Ruta):
+        """
+        Abre el formulario de edición para una ruta existente
+        
+        Args:
+            ruta: La ruta a editar
+        """
+        # Crear campos del formulario pre-llenados
+        nombre_field = ft.TextField(
+            label="Nombre de la ruta", 
+            hint_text="Ej: Ruta Centro",
+            width=300,
+            value=ruta.nombre
+        )
+        
+        descripcion_field = ft.TextField(
+            label="Descripción (opcional)", 
+            multiline=True, 
+            max_lines=2,
+            width=300,
+            value=ruta.descripcion or ""
+        )
+        
+        # Contenedor para mensajes de error
+        error_container = ft.Container()
+        
+        def show_error(message):
+            """Muestra un mensaje de error en el formulario"""
+            error_container.content = ft.Container(
+                content=ft.Text(
+                    message, 
+                    color="red", 
+                    size=12,
+                    text_align=ft.TextAlign.CENTER
+                ),
+                padding=5,
+                border_radius=5,
+                bgcolor="red100",
+                border=ft.border.all(1, "red")
+            )
+            self._page_ref.update()
+        
+        def clear_error():
+            """Limpia el mensaje de error"""
+            error_container.content = None
+            self._page_ref.update()
+        
+        def handle_close(e):
+            if e.control.text == "Guardar Cambios":
+                # Limpiar errores previos
+                clear_error()
+                
+                # Validar nombre
+                nombre = nombre_field.value
+                if not nombre or not nombre.strip():
+                    show_error("❌ El nombre de la ruta es obligatorio")
+                    return
+                
+                # Verificar duplicados (solo si el nombre cambió)
+                nombre_nuevo = nombre.strip()
+                if nombre_nuevo.lower() != ruta.nombre.lower() and self._check_route_name_exists(nombre_nuevo):
+                    show_error("❌ Ya existe una ruta con ese nombre")
+                    return
+                
+                # Procesar descripción
+                descripcion = descripcion_field.value
+                descripcion_final = None
+                if descripcion and descripcion.strip():
+                    descripcion_final = descripcion.strip()
+                
+                # Cerrar diálogo y editar ruta
+                dlg.open = False
+                self._page_ref.update()
+                
+                print(f"Editando ruta ID {ruta.id}: {nombre_nuevo}, Descripción: {descripcion_final}")
+                if self.on_edit_route:
+                    self.on_edit_route(ruta.id, nombre_nuevo, descripcion_final)
+            else:
+                # Cancelar
+                dlg.open = False
+                self._page_ref.update()
+        
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("✏️ Editar Ruta"),
+            content=ft.Column([
+                ft.Text("Modifica los datos de la ruta:", size=14),
+                ft.Container(height=10),
+                nombre_field,
+                ft.Container(height=10),
+                descripcion_field,
+                ft.Container(height=15),
+                error_container,  # Contenedor para errores
+            ], tight=True, height=280),
+            actions=[
+                ft.TextButton("Cancelar", on_click=handle_close),
+                ft.ElevatedButton("Guardar Cambios", on_click=handle_close, bgcolor="blue", color="white"),
+            ],
+        )
+        
+        self._page_ref.open(dlg)
+    
+    def _confirm_delete_route(self, ruta: Ruta):
+        """
+        Muestra el modal de confirmación para eliminar una ruta
+        
+        Args:
+            ruta: La ruta a eliminar
+        """
+        def handle_delete(e):
+            if e.control.text == "Sí, eliminar":
+                dlg.open = False
+                self._page_ref.update()
+                
+                print(f"Eliminando ruta ID {ruta.id}: {ruta.nombre}")
+                if self.on_delete_route:
+                    self.on_delete_route(ruta.id, ruta.nombre)
+            else:
+                # Cancelar
+                dlg.open = False
+                self._page_ref.update()
+        
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("⚠️ Confirmar Eliminación"),
+            content=ft.Column([
+                ft.Text("¿Estás seguro de que quieres eliminar esta ruta?", size=14),
+                ft.Container(height=10),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Text("📛", size=16),
+                            ft.Text(ruta.nombre, size=16, weight=ft.FontWeight.BOLD),
+                        ], spacing=8),
+                        ft.Text(ruta.descripcion or "Sin descripción", size=12, color="grey"),
+                    ], spacing=5),
+                    padding=10,
+                    border_radius=5,
+                    bgcolor="red50",
+                    border=ft.border.all(1, "red200")
+                ),
+                ft.Container(height=15),
+                ft.Text("⚠️ Esta acción no se puede deshacer", size=12, color="red", weight=ft.FontWeight.BOLD),
+            ], tight=True),
+            actions=[
+                ft.TextButton("Cancelar", on_click=handle_delete),
+                ft.ElevatedButton("Sí, eliminar", on_click=handle_delete, bgcolor="red", color="white"),
+            ],
+        )
+        
+        self._page_ref.open(dlg)
+    
+    def _close_dialog(self, dialog):
+        """Cierra un diálogo"""
+        dialog.open = False
+        self._page_ref.update()

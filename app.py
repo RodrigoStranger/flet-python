@@ -68,7 +68,9 @@ class ToursApp:
         
         self.dashboard_view = DashboardView(
             on_logout=self.handle_logout,
-            on_create_route=self.handle_create_route
+            on_create_route=self.handle_create_route,
+            on_edit_route=self.handle_edit_route,
+            on_delete_route=self.handle_delete_route
         )
     
     # =============== MANEJADORES DE EVENTOS ===============
@@ -222,24 +224,103 @@ class ToursApp:
             self.dashboard_view.show_message(error_msg, "error")
             logger.error(f"Error en crear ruta: {e}")
     
-    def _refresh_routes_in_dashboard(self):
-        """Actualiza la lista de rutas en el dashboard"""
+    def handle_edit_route(self, route_id: int, nombre: str, descripcion: Optional[str]):
+        """
+        Maneja la edición de una ruta existente
+        
+        Args:
+            route_id: ID de la ruta a editar
+            nombre: Nuevo nombre de la ruta
+            descripcion: Nueva descripción de la ruta (puede ser None)
+        """
         try:
             if not self.current_user:
+                logger.warning("Intento de editar ruta sin autenticación")
+                self.show_login()
                 return
             
-            # Obtener rutas actualizadas
-            resultado = self.routes_controller.get_user_routes(self.current_user.id)
+            # Mostrar mensaje de carga
+            self.dashboard_view.show_message("🔄 Guardando cambios...", "info")
+            
+            # Editar la ruta usando el controlador
+            resultado = self.routes_controller.update_route(
+                route_id=route_id,
+                user_id=self.current_user.id,
+                nombre=nombre,
+                descripcion=descripcion
+            )
             
             if resultado["success"]:
-                # Actualizar el dashboard con las rutas
-                self.dashboard_view.update_routes(resultado["routes"])
+                # Mostrar mensaje de éxito
+                self.dashboard_view.show_message(
+                    f"Ruta '{nombre}' actualizada exitosamente", 
+                    "success"
+                )
+                
+                # Actualizar la lista de rutas en el dashboard
+                self._refresh_routes_in_dashboard()
+                logger.info(f"Ruta editada: ID {route_id} -> {nombre} (Usuario: {self.current_user.id})")
+                
             else:
-                logger.error(f"Error al actualizar rutas: {resultado['message']}")
+                # Mostrar error
+                self.dashboard_view.show_message(
+                    resultado["message"], 
+                    "error"
+                )
+                logger.warning(f"Error al editar ruta: {resultado['message']}")
                 
         except Exception as e:
-            logger.error(f"Error al refrescar rutas en dashboard: {e}")
+            error_msg = f"Error inesperado al editar ruta: {str(e)}"
+            self.dashboard_view.show_message(error_msg, "error")
+            logger.error(error_msg)
     
+    def handle_delete_route(self, route_id: int, nombre: str):
+        """
+        Maneja la eliminación de una ruta
+        
+        Args:
+            route_id: ID de la ruta a eliminar
+            nombre: Nombre de la ruta (para logging y mensajes)
+        """
+        try:
+            if not self.current_user:
+                logger.warning("Intento de eliminar ruta sin autenticación")
+                self.show_login()
+                return
+            
+            # Mostrar mensaje de carga
+            self.dashboard_view.show_message("🔄 Eliminando ruta...", "info")
+            
+            # Eliminar la ruta usando el controlador
+            resultado = self.routes_controller.delete_route(
+                route_id=route_id,
+                user_id=self.current_user.id
+            )
+            
+            if resultado["success"]:
+                # Mostrar mensaje de éxito
+                self.dashboard_view.show_message(
+                    f"Ruta '{nombre}' eliminada exitosamente", 
+                    "success"
+                )
+                
+                # Actualizar la lista de rutas en el dashboard
+                self._refresh_routes_in_dashboard()
+                logger.info(f"Ruta eliminada: ID {route_id} - {nombre} (Usuario: {self.current_user.id})")
+                
+            else:
+                # Mostrar error
+                self.dashboard_view.show_message(
+                    resultado["message"], 
+                    "error"
+                )
+                logger.warning(f"Error al eliminar ruta: {resultado['message']}")
+                
+        except Exception as e:
+            error_msg = f"Error inesperado al eliminar ruta: {str(e)}"
+            self.dashboard_view.show_message(error_msg, "error")
+            logger.error(error_msg)
+
     # =============== NAVEGACIÓN ===============
     
     def show_login(self):
@@ -338,7 +419,33 @@ class ToursApp:
             logger.info("Limpieza de la aplicación completada")
         except Exception as e:
             logger.error(f"Error durante la limpieza: {e}")
-
+    
+    def _refresh_routes_in_dashboard(self):
+        """
+        Actualiza las rutas en el dashboard actual sin recargar toda la vista
+        """
+        if not self.current_user:
+            logger.warning("Intento de actualizar rutas sin autenticación")
+            return
+        
+        try:
+            # Obtener rutas del usuario
+            resultado = self.routes_controller.get_user_routes(self.current_user.id)
+            
+            if resultado["success"]:
+                routes = resultado["routes"]
+                # Actualizar las rutas en el dashboard view
+                self.dashboard_view.update_routes(routes)
+                logger.info(f"Rutas actualizadas en dashboard: {len(routes)} rutas")
+            else:
+                logger.warning(f"Error al actualizar rutas: {resultado['message']}")
+                # En caso de error, mostrar lista vacía
+                self.dashboard_view.update_routes([])
+                
+        except Exception as e:
+            logger.error(f"Error al actualizar rutas en dashboard: {e}")
+            # En caso de error, mostrar lista vacía
+            self.dashboard_view.update_routes([])
 
 def main(page: ft.Page):
     """
