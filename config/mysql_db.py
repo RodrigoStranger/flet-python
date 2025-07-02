@@ -151,3 +151,87 @@ def get_cursor() -> Optional[mysql.connector.cursor.MySQLCursor]:
 def execute_query(query: str, params: tuple = None) -> bool:
     """Ejecuta una consulta SQL"""
     return db_manager.execute_query(query, params)
+
+# Funciones de autenticación
+def login_user(correo: str, clave: str) -> dict:
+    """
+    Intenta hacer login de un usuario
+    Retorna dict con resultado del login
+    """
+    try:
+        if not is_db_connected():
+            return {"success": False, "message": "No hay conexión a la base de datos"}
+        
+        cursor = get_cursor()
+        if not cursor:
+            return {"success": False, "message": "No se pudo obtener cursor"}
+        
+        # Buscar usuario por correo y clave
+        query = "SELECT id, nombre, correo FROM usuarios WHERE correo = %s AND clave = %s"
+        cursor.execute(query, (correo, clave))
+        result = cursor.fetchone()
+        
+        if result:
+            user_data = {
+                "id": result[0],
+                "nombre": result[1], 
+                "correo": result[2]
+            }
+            logger.info(f"✅ Login exitoso para: {correo}")
+            return {"success": True, "message": "Inicio de sesión exitoso", "user": user_data}
+        else:
+            logger.warning(f"⚠️ Login fallido para: {correo}")
+            return {"success": False, "message": "Correo o contraseña incorrectos"}
+    
+    except Error as e:
+        logger.error(f"❌ Error en login: {e}")
+        return {"success": False, "message": f"Error en la base de datos: {str(e)}"}
+    except Exception as e:
+        logger.error(f"❌ Error inesperado en login: {e}")
+        return {"success": False, "message": "Error inesperado"}
+
+def register_user(nombre: str, correo: str, clave: str) -> dict:
+    """
+    Registra un nuevo usuario
+    Retorna dict con resultado del registro
+    """
+    try:
+        if not is_db_connected():
+            return {"success": False, "message": "No hay conexión a la base de datos"}
+        
+        # Validar formato de correo (básico)
+        if not validate_email(correo):
+            return {"success": False, "message": "Formato de correo inválido"}
+        
+        cursor = get_cursor()
+        if not cursor:
+            return {"success": False, "message": "No se pudo obtener cursor"}
+        
+        # Verificar si el correo ya existe
+        check_query = "SELECT id FROM usuarios WHERE correo = %s"
+        cursor.execute(check_query, (correo,))
+        if cursor.fetchone():
+            return {"success": False, "message": "El correo ya está registrado"}
+        
+        # Insertar nuevo usuario
+        insert_query = "INSERT INTO usuarios (nombre, correo, clave) VALUES (%s, %s, %s)"
+        cursor.execute(insert_query, (nombre, correo, clave))
+        get_connection().commit()
+        
+        logger.info(f"✅ Usuario registrado exitosamente: {correo}")
+        return {"success": True, "message": "Usuario registrado exitosamente"}
+    
+    except Error as e:
+        logger.error(f"❌ Error en registro: {e}")
+        return {"success": False, "message": f"Error en la base de datos: {str(e)}"}
+    except Exception as e:
+        logger.error(f"❌ Error inesperado en registro: {e}")
+        return {"success": False, "message": "Error inesperado"}
+
+def validate_email(email: str) -> bool:
+    """
+    Validación básica de formato de correo electrónico
+    """
+    import re
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(pattern, email) is not None
