@@ -785,21 +785,25 @@ class ToursApp:
         """
         Maneja el regreso de la vista de conexiones o del grafo a la vista de paradas
         """
-        # Primero verificar si estamos en la vista del grafo
+        # Verificar si estamos en la vista del grafo
         if hasattr(self, 'ruta_graph_view') and hasattr(self.ruta_graph_view, 'ruta') and self.ruta_graph_view.ruta:
             ruta = self.ruta_graph_view.ruta
-            self.handle_view_stops(ruta)
+            resultado = self.paradas_controller.get_route_stops(ruta.id, self.current_user.id)
+            paradas = resultado["paradas"] if resultado["success"] else []
+            content = self.paradas_view.create(user=self.current_user, ruta=ruta, paradas=paradas)
+            self.paradas_view.set_page_reference(self.page)
+            self._clear_and_show(content)
             return
-            
         # Si no, asumimos que estamos en la vista de conexiones
         parada = self.conexiones_view.parada
         ruta = self.conexiones_view.ruta
-        
         if parada and ruta:
-            # Volver a mostrar la vista de paradas
-            self.handle_view_stops(ruta)
+            resultado = self.paradas_controller.get_route_stops(ruta.id, self.current_user.id)
+            paradas = resultado["paradas"] if resultado["success"] else []
+            content = self.paradas_view.create(user=self.current_user, ruta=ruta, paradas=paradas)
+            self.paradas_view.set_page_reference(self.page)
+            self._clear_and_show(content)
         else:
-            # Si no hay contexto, volver al dashboard
             self.show_dashboard()
     
     def handle_visualize_route(self, ruta):
@@ -847,8 +851,7 @@ class ToursApp:
                 conexiones=conexiones,
                 page=self.page
             )
-            self.page.controls = [content]
-            self.page.update()
+            self._clear_and_show(content)
             
             logger.info(f"Visualizando grafo para ruta '{ruta.nombre}' con {len(paradas)} paradas y {len(conexiones)} conexiones")
             
