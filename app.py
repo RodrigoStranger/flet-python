@@ -174,13 +174,13 @@ class ToursApp:
             # Ir al login de todas formas
             self.show_login()
     
-    def handle_create_route(self, nombre: str, descripcion: str):
+    def handle_create_route(self, nombre: str, descripcion: Optional[str]):
         """
         Maneja la creación de una nueva ruta
         
         Args:
             nombre: Nombre de la ruta
-            descripcion: Descripción de la ruta
+            descripcion: Descripción de la ruta (puede ser None)
         """
         try:
             if not self.current_user:
@@ -201,7 +201,7 @@ class ToursApp:
             if resultado["success"]:
                 # Mostrar mensaje de éxito
                 self.dashboard_view.show_message(
-                    f"✅ Ruta '{nombre}' creada exitosamente", 
+                    f"Ruta '{nombre}' creada exitosamente", 
                     "success"
                 )
                 

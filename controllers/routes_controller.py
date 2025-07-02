@@ -86,24 +86,29 @@ class RoutesController:
         finally:
             self.db.disconnect()
     
-    def create_route(self, user_id: int, nombre: str, descripcion: str = "") -> Dict[str, Any]:
+    def create_route(self, user_id: int, nombre: str, descripcion: Optional[str] = None) -> Dict[str, Any]:
         """
         Crea una nueva ruta para el usuario
         
         Args:
             user_id: ID del usuario
             nombre: Nombre de la ruta
-            descripcion: Descripción de la ruta
+            descripcion: Descripción de la ruta (None si está vacía)
             
         Returns:
             Dict con resultado de la operación
         """
         try:
+            # Procesar la descripción: si está vacía, es None, o solo espacios, mantener como None
+            descripcion_final = None
+            if descripcion and descripcion.strip():
+                descripcion_final = descripcion.strip()
+            
             # Crear objeto ruta
             nueva_ruta = Ruta(
                 usuario_id=user_id,
                 nombre=nombre,
-                descripcion=descripcion
+                descripcion=descripcion_final
             )
             
             # Validar la ruta
@@ -143,13 +148,13 @@ class RoutesController:
                     "route": None
                 }
             
-            # Insertar nueva ruta
+            # Insertar nueva ruta con descripción NULL si está vacía
             insert_query = """
                 INSERT INTO rutas (usuario_id, nombre, descripcion)
                 VALUES (%s, %s, %s)
             """
             
-            cursor.execute(insert_query, (user_id, nombre.strip(), descripcion.strip()))
+            cursor.execute(insert_query, (user_id, nombre.strip(), descripcion_final))
             ruta_id = cursor.lastrowid
             connection.commit()
             cursor.close()
@@ -157,7 +162,7 @@ class RoutesController:
             # Crear objeto ruta con ID
             nueva_ruta.id = ruta_id
             
-            logger.info(f"Ruta creada exitosamente: ID {ruta_id}, Usuario {user_id}")
+            logger.info(f"Ruta creada exitosamente: ID {ruta_id}, Usuario {user_id}, Descripción: {descripcion_final}")
             
             return {
                 "success": True,

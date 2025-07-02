@@ -48,7 +48,7 @@ class AppConfig:
     MESSAGES = {
         "login": {
             "loading": "🔄 Iniciando sesión...",
-            "success": "✅ Inicio de sesión exitoso",
+            "success": "Inicio de sesión exitoso",
             "error_empty": "❌ Todos los campos son obligatorios",
             "error_email": "❌ Formato de correo inválido",
             "error_credentials": "❌ Correo o contraseña incorrectos",
@@ -56,7 +56,7 @@ class AppConfig:
         },
         "register": {
             "loading": "🔄 Registrando usuario...",
-            "success": "✅ Usuario registrado exitosamente",
+            "success": "Usuario registrado exitosamente",
             "error_empty": "❌ Todos los campos son obligatorios",
             "error_name": "❌ El nombre no debe estar vacío",
             "error_email": "❌ Formato de correo inválido",
@@ -68,7 +68,7 @@ class AppConfig:
             "welcome": "🎉 ¡Bienvenido!",
             "goodbye": "👋 Hasta luego",
             "error": "❌ Ha ocurrido un error",
-            "success": "✅ Operación exitosa"
+            "success": "Operación exitosa"
         }
     }
     

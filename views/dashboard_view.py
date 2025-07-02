@@ -27,6 +27,7 @@ class DashboardView:
         self.routes = []
         self.message_container = None
         self.routes_container = None
+        self._page_ref = None
         
     def create(self, user: Optional[User] = None, routes: List[Ruta] = None) -> ft.Container:
         """
@@ -129,7 +130,238 @@ class DashboardView:
     
     def _on_create_route_click(self, e):
         """Maneja el click del botón crear ruta"""
-        self._show_create_route_dialog()
+        print("DEBUG: Botón 'Nueva Ruta' clicado")
+        
+        # SOLUCIÓN SIMPLE: Usar page.open()
+        self._open_simple_form()
+    
+    def _open_simple_form(self):
+        """Abre un formulario simple que SÍ funciona"""
+        
+        # Crear campos del formulario
+        nombre_field = ft.TextField(
+            label="Nombre de la ruta", 
+            hint_text="Ej: Ruta Centro",
+            width=300
+        )
+        
+        descripcion_field = ft.TextField(
+            label="Descripción (opcional)", 
+            multiline=True, 
+            max_lines=2,
+            width=300
+        )
+        
+        # Contenedor para mensajes de error
+        error_container = ft.Container()
+        
+        def show_error(message):
+            """Muestra un mensaje de error en el formulario"""
+            error_container.content = ft.Container(
+                content=ft.Text(
+                    message, 
+                    color="red", 
+                    size=12,
+                    text_align=ft.TextAlign.CENTER
+                ),
+                padding=5,
+                border_radius=5,
+                bgcolor="red100",
+                border=ft.border.all(1, "red")
+            )
+            self._page_ref.update()
+        
+        def clear_error():
+            """Limpia el mensaje de error"""
+            error_container.content = None
+            self._page_ref.update()
+        
+        def handle_close(e):
+            if e.control.text == "Crear Ruta":
+                # Limpiar errores previos
+                clear_error()
+                
+                # Validar nombre
+                nombre = nombre_field.value
+                if not nombre or not nombre.strip():
+                    show_error("❌ El nombre de la ruta es obligatorio")
+                    return
+                
+                # Verificar duplicados
+                if self._check_route_name_exists(nombre.strip()):
+                    show_error("❌ Ya existe una ruta con ese nombre")
+                    return
+                
+                # Procesar descripción
+                descripcion = descripcion_field.value
+                descripcion_final = None
+                if descripcion and descripcion.strip():
+                    descripcion_final = descripcion.strip()
+                
+                # Cerrar diálogo y crear ruta
+                dlg.open = False
+                self._page_ref.update()
+                
+                print(f"Creando ruta: {nombre.strip()}, Descripción: {descripcion_final}")
+                self._handle_route_creation(nombre.strip(), descripcion_final)
+            else:
+                # Cancelar
+                dlg.open = False
+                self._page_ref.update()
+        
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("🗺️ Crear Nueva Ruta"),
+            content=ft.Column([
+                ft.Text("Complete los datos:", size=14),
+                ft.Container(height=10),
+                nombre_field,
+                ft.Container(height=10),
+                descripcion_field,
+                ft.Container(height=15),
+                error_container,  # Contenedor para errores
+            ], tight=True, height=280),
+            actions=[
+                ft.TextButton("Cancelar", on_click=handle_close),
+                ft.ElevatedButton("Crear Ruta", on_click=handle_close, bgcolor="green", color="white"),
+            ],
+        )
+        
+        self._page_ref.open(dlg)
+    
+    def _check_route_name_exists(self, nombre: str) -> bool:
+        """
+        Verifica si ya existe una ruta con el mismo nombre para el usuario actual
+        
+        Args:
+            nombre: Nombre de la ruta a verificar
+            
+        Returns:
+            True si existe, False si no existe
+        """
+        if not self.user:
+            return False
+        
+        try:
+            # Obtener todas las rutas del usuario
+            for ruta in self.routes:
+                if ruta.nombre.lower().strip() == nombre.lower().strip():
+                    return True
+            return False
+        except Exception as e:
+            print(f"Error al verificar nombre de ruta: {e}")
+            return False
+    
+    def _show_create_route_dialog_direct(self):
+        """Muestra el formulario para crear ruta usando BottomSheet"""
+        print("DEBUG: Iniciando creación de BottomSheet...")
+        
+        nombre_field = ft.TextField(
+            label="Nombre de la ruta",
+            hint_text="Ej: Ruta Centro Histórico",
+            width=350,
+            autofocus=True
+        )
+        
+        descripcion_field = ft.TextField(
+            label="Descripción (opcional)",
+            hint_text="Describe tu ruta...",
+            multiline=True,
+            max_lines=3,
+            width=350
+        )
+        
+        def crear_ruta(e):
+            print("DEBUG: Botón Crear Ruta presionado")
+            if not nombre_field.value or not nombre_field.value.strip():
+                print("Error: El nombre es obligatorio")
+                nombre_field.error_text = "El nombre es obligatorio"
+                self._page_ref.update()
+                return
+            
+            print(f"DEBUG: Cerrando BottomSheet y creando ruta: {nombre_field.value}")
+            # Cerrar BottomSheet
+            self._page_ref.bottom_sheet.open = False
+            self._page_ref.update()
+            
+            # Crear la ruta
+            self._handle_route_creation(nombre_field.value.strip(), descripcion_field.value or "")
+        
+        def cancelar(e):
+            print("DEBUG: Cancelando BottomSheet")
+            self._page_ref.bottom_sheet.open = False
+            self._page_ref.update()
+        
+        # Crear BottomSheet
+        bottom_sheet = ft.BottomSheet(
+            content=ft.Container(
+                content=ft.Column([
+                    # Título
+                    ft.Row([
+                        ft.Icon(ft.Icons.ADD_LOCATION, color="green"),
+                        ft.Text("Crear Nueva Ruta", size=20, weight=ft.FontWeight.BOLD),
+                    ], spacing=10),
+                    
+                    ft.Divider(),
+                    
+                    # Campos del formulario
+                    nombre_field,
+                    ft.Container(height=10),
+                    descripcion_field,
+                    ft.Container(height=20),
+                    
+                    # Botones
+                    ft.Row([
+                        ft.ElevatedButton(
+                            "Cancelar", 
+                            on_click=cancelar,
+                            bgcolor="grey",
+                            color="white",
+                            width=150
+                        ),
+                        ft.ElevatedButton(
+                            "Crear Ruta", 
+                            on_click=crear_ruta, 
+                            bgcolor="green", 
+                            color="white",
+                            width=150
+                        ),
+                    ], alignment=ft.MainAxisAlignment.SPACE_AROUND),
+                    
+                    ft.Container(height=20),
+                    
+                ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=30,
+                width=400
+            ),
+            open=True
+        )
+        
+        print("DEBUG: Configurando BottomSheet en página...")
+        # Mostrar BottomSheet
+        if self._page_ref:
+            self._page_ref.bottom_sheet = bottom_sheet
+            self._page_ref.update()
+            print("DEBUG: ¡BottomSheet configurado y mostrado!")
+        else:
+            print("ERROR: No hay referencia a la página")
+    
+    def _handle_route_creation(self, nombre: str, descripcion: Optional[str]):
+        """
+        Maneja la creación de ruta desde el formulario
+        
+        Args:
+            nombre: Nombre de la ruta
+            descripcion: Descripción de la ruta (puede ser None)
+        """
+        print(f"DEBUG: Creando ruta - Nombre: {nombre}, Descripción: {descripcion}")
+        # Llamar al callback principal
+        if self.on_create_route:
+            self.on_create_route(nombre, descripcion)
+    
+    def _handle_form_cancel(self):
+        """Maneja la cancelación del formulario"""
+        print("DEBUG: Formulario de crear ruta cancelado")
     
     def _update_routes_content(self):
         """Actualiza el contenido del contenedor de rutas"""
@@ -232,60 +464,6 @@ class DashboardView:
             width=500
         )
     
-    def _show_create_route_dialog(self):
-        """Muestra el diálogo para crear una nueva ruta"""
-        nombre_field = ft.TextField(
-            label="Nombre de la ruta",
-            hint_text="Ej: Ruta Centro Histórico",
-            width=300
-        )
-        
-        descripcion_field = ft.TextField(
-            label="Descripción (opcional)",
-            hint_text="Describe tu ruta...",
-            multiline=True,
-            max_lines=3,
-            width=300
-        )
-        
-        def crear_ruta(e):
-            if not nombre_field.value or not nombre_field.value.strip():
-                self.show_message("El nombre de la ruta es obligatorio", "error")
-                return
-            
-            # Cerrar diálogo
-            dialog.open = False
-            if hasattr(e.page, 'update'):
-                e.page.update()
-            
-            # Llamar al callback
-            self.on_create_route(nombre_field.value.strip(), descripcion_field.value or "")
-        
-        def cancelar(e):
-            dialog.open = False
-            if hasattr(e.page, 'update'):
-                e.page.update()
-        
-        dialog = ft.AlertDialog(
-            title=ft.Text("🗺️ Crear Nueva Ruta"),
-            content=ft.Column([
-                nombre_field,
-                ft.Container(height=10),
-                descripcion_field,
-            ], spacing=10, tight=True),
-            actions=[
-                ft.TextButton("Cancelar", on_click=cancelar),
-                ft.ElevatedButton("Crear Ruta", on_click=crear_ruta, bgcolor="green", color="white"),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
-        )
-        
-        # Mostrar diálogo
-        if hasattr(self, '_page_ref'):
-            self._page_ref.dialog = dialog
-            dialog.open = True
-            self._page_ref.update()
-    
     def update_routes(self, routes: List[Ruta]):
         """
         Actualiza la lista de rutas mostrada
@@ -295,7 +473,7 @@ class DashboardView:
         """
         self.routes = routes
         self._update_routes_content()
-        if hasattr(self, '_page_ref'):
+        if self._page_ref:
             self._page_ref.update()
     
     def show_message(self, message: str, message_type: str = "info"):
@@ -325,7 +503,7 @@ class DashboardView:
         
         icon_map = {
             "info": "ℹ️",
-            "success": "✅",
+            "success": "",
             "warning": "⚠️",
             "error": "❌"
         }
@@ -343,18 +521,32 @@ class DashboardView:
             border=ft.border.all(1, color)
         )
         
-        if hasattr(self, '_page_ref'):
+        if self._page_ref:
             self._page_ref.update()
+        
+        # Auto-ocultar mensajes de éxito después de 2 segundos
+        if message_type == "success":
+            import threading
+            import time
+            
+            def auto_hide():
+                time.sleep(2)
+                self.clear_message()
+            
+            thread = threading.Thread(target=auto_hide)
+            thread.daemon = True
+            thread.start()
     
     def clear_message(self):
         """Limpia el mensaje mostrado"""
         self.message_container.content = None
-        if hasattr(self, '_page_ref'):
+        if self._page_ref:
             self._page_ref.update()
     
     def set_page_reference(self, page):
         """Establece referencia a la página para actualizaciones"""
         self._page_ref = page
+        print(f"DEBUG: Referencia de página establecida: {page is not None}")
     
     def update_user_info(self, user: User):
         """
@@ -364,7 +556,6 @@ class DashboardView:
             user: Usuario actualizado
         """
         self.user = user
-        # Esta función se puede expandir para actualizar la vista en tiempo real
     
     def get_user_info(self) -> dict:
         """
@@ -390,7 +581,6 @@ class DashboardView:
             message: Mensaje a mostrar
             notification_type: Tipo de notificación (info, success, warning, error)
         """
-        # Esta función se puede expandir para mostrar notificaciones en el dashboard
         color_map = {
             "info": "blue",
             "success": "green", 
@@ -410,7 +600,6 @@ class DashboardView:
             callback: Función a ejecutar
             icon: Icono de la acción
         """
-        # Esta función se puede expandir para añadir acciones dinámicas
         print(f"Acción rápida añadida: {name}")
     
     def get_dashboard_stats(self) -> dict:
@@ -420,7 +609,6 @@ class DashboardView:
         Returns:
             Dict con estadísticas
         """
-        # Esta función se puede expandir para mostrar estadísticas
         return {
             "session_start": "Ahora",
             "last_login": "Primera vez",

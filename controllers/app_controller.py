@@ -131,7 +131,7 @@ class AppController:
         if resultado["success"]:
             # Login exitoso
             self.current_user = resultado["user"]
-            self.login_view.show_message(f"✅ {resultado['message']}", "green")
+            self.login_view.show_message(f"{resultado['message']}", "green")
             
             # Esperar un momento y cambiar a dashboard
             self._delayed_navigation(self.show_dashboard, 1)
@@ -156,7 +156,7 @@ class AppController:
         
         if resultado["success"]:
             # Registro exitoso
-            self.register_view.show_message(f"✅ {resultado['message']}", "green")
+            self.register_view.show_message(f"{resultado['message']}", "green")
             
             # Limpiar campos
             self.register_view.clear_fields()

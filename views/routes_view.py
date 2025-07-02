@@ -345,7 +345,7 @@ class RoutesView:
         
         icon_map = {
             "info": "ℹ️",
-            "success": "✅",
+            "success": "",
             "warning": "⚠️",
             "error": "❌"
         }

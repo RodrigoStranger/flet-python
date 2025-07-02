@@ -51,7 +51,7 @@ class MySQL:
             
             if self._connection.is_connected():
                 self._cursor = self._connection.cursor()
-                logger.info(f"✅ Conectado exitosamente a: {self._database}")
+                logger.info(f"Conectado exitosamente a: {self._database}")
                 return True
             else:
                 logger.error("❌ No se pudo establecer la conexión")
@@ -177,7 +177,7 @@ def login_user(correo: str, clave: str) -> dict:
                 "nombre": result[1], 
                 "correo": result[2]
             }
-            logger.info(f"✅ Login exitoso para: {correo}")
+            logger.info(f"Login exitoso para: {correo}")
             return {"success": True, "message": "Inicio de sesión exitoso", "user": user_data}
         else:
             logger.warning(f"⚠️ Login fallido para: {correo}")
@@ -218,7 +218,7 @@ def register_user(nombre: str, correo: str, clave: str) -> dict:
         cursor.execute(insert_query, (nombre, correo, clave))
         get_connection().commit()
         
-        logger.info(f"✅ Usuario registrado exitosamente: {correo}")
+        logger.info(f"Usuario registrado exitosamente: {correo}")
         return {"success": True, "message": "Usuario registrado exitosamente"}
     
     except Error as e:
