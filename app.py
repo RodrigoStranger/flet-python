@@ -9,6 +9,7 @@ from typing import Optional, Dict, Any
 # Importar módulos propios
 from core.config import AppConfig, configure_page
 from controllers.auth_controller import AuthController
+from controllers.routes_controller import RoutesController
 from views.login_view import LoginView
 from views.register_view import RegisterView  
 from views.dashboard_view import DashboardView
@@ -43,6 +44,7 @@ class ToursApp:
         
         # Inicializar controladores
         self.auth_controller = AuthController()
+        self.routes_controller = RoutesController()
         
         # Inicializar vistas
         self._init_views()
@@ -65,7 +67,8 @@ class ToursApp:
         )
         
         self.dashboard_view = DashboardView(
-            on_logout=self.handle_logout
+            on_logout=self.handle_logout,
+            on_create_route=self.handle_create_route
         )
     
     # =============== MANEJADORES DE EVENTOS ===============
@@ -171,6 +174,72 @@ class ToursApp:
             # Ir al login de todas formas
             self.show_login()
     
+    def handle_create_route(self, nombre: str, descripcion: str):
+        """
+        Maneja la creación de una nueva ruta
+        
+        Args:
+            nombre: Nombre de la ruta
+            descripcion: Descripción de la ruta
+        """
+        try:
+            if not self.current_user:
+                logger.warning("Intento de crear ruta sin autenticación")
+                self.show_login()
+                return
+            
+            # Mostrar mensaje de carga
+            self.dashboard_view.show_message("🔄 Creando ruta...", "info")
+            
+            # Crear la ruta
+            resultado = self.routes_controller.create_route(
+                user_id=self.current_user.id,
+                nombre=nombre,
+                descripcion=descripcion
+            )
+            
+            if resultado["success"]:
+                # Mostrar mensaje de éxito
+                self.dashboard_view.show_message(
+                    f"✅ Ruta '{nombre}' creada exitosamente", 
+                    "success"
+                )
+                
+                # Actualizar la lista de rutas en el dashboard
+                self._refresh_routes_in_dashboard()
+                logger.info(f"Ruta creada: {nombre} (Usuario: {self.current_user.id})")
+                
+            else:
+                # Mostrar error
+                self.dashboard_view.show_message(
+                    resultado["message"], 
+                    "error"
+                )
+                logger.warning(f"Error al crear ruta: {resultado['message']}")
+                
+        except Exception as e:
+            error_msg = "Error inesperado al crear la ruta"
+            self.dashboard_view.show_message(error_msg, "error")
+            logger.error(f"Error en crear ruta: {e}")
+    
+    def _refresh_routes_in_dashboard(self):
+        """Actualiza la lista de rutas en el dashboard"""
+        try:
+            if not self.current_user:
+                return
+            
+            # Obtener rutas actualizadas
+            resultado = self.routes_controller.get_user_routes(self.current_user.id)
+            
+            if resultado["success"]:
+                # Actualizar el dashboard con las rutas
+                self.dashboard_view.update_routes(resultado["routes"])
+            else:
+                logger.error(f"Error al actualizar rutas: {resultado['message']}")
+                
+        except Exception as e:
+            logger.error(f"Error al refrescar rutas en dashboard: {e}")
+    
     # =============== NAVEGACIÓN ===============
     
     def show_login(self):
@@ -184,14 +253,42 @@ class ToursApp:
         logger.debug("Vista de registro mostrada")
     
     def show_dashboard(self):
-        """Muestra la vista del dashboard"""
+        """Muestra la vista del dashboard con rutas integradas"""
         if not self.current_user:
             logger.warning("Intento de acceder al dashboard sin autenticación")
             self.show_login()
             return
         
-        self._clear_and_show(self.dashboard_view.create(user=self.current_user))
-        logger.debug(f"Dashboard mostrado para: {self.current_user.nombre}")
+        try:
+            # Obtener rutas del usuario
+            resultado = self.routes_controller.get_user_routes(self.current_user.id)
+            
+            if resultado["success"]:
+                routes = resultado["routes"]
+                logger.info(f"Mostrando dashboard con {len(routes)} rutas para usuario {self.current_user.nombre}")
+            else:
+                routes = []
+                logger.warning(f"No se pudieron cargar rutas: {resultado['message']}")
+            
+            # Crear y mostrar el dashboard con rutas
+            content = self.dashboard_view.create(user=self.current_user, routes=routes)
+            self.dashboard_view.set_page_reference(self.page)
+            self._clear_and_show(content)
+            
+            # Mostrar mensaje si hubo error al cargar
+            if not resultado["success"]:
+                self.dashboard_view.show_message(
+                    f"⚠️ {resultado['message']}", 
+                    "warning"
+                )
+            
+            logger.debug(f"Dashboard mostrado para: {self.current_user.nombre}")
+            
+        except Exception as e:
+            logger.error(f"Error al mostrar dashboard: {e}")
+            # Mostrar dashboard básico en caso de error
+            content = self.dashboard_view.create(user=self.current_user, routes=[])
+            self._clear_and_show(content)
     
     def _clear_and_show(self, content):
         """
