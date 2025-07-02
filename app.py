@@ -10,9 +10,11 @@ from typing import Optional, Dict, Any
 from core.config import AppConfig, configure_page
 from controllers.auth_controller import AuthController
 from controllers.routes_controller import RoutesController
+from controllers.paradas_controller import ParadasController
 from views.login_view import LoginView
 from views.register_view import RegisterView  
 from views.dashboard_view import DashboardView
+from views.paradas_view import ParadasView
 from models import User
 
 # Configurar logging
@@ -45,6 +47,7 @@ class ToursApp:
         # Inicializar controladores
         self.auth_controller = AuthController()
         self.routes_controller = RoutesController()
+        self.paradas_controller = ParadasController()
         
         # Inicializar vistas
         self._init_views()
@@ -70,7 +73,15 @@ class ToursApp:
             on_logout=self.handle_logout,
             on_create_route=self.handle_create_route,
             on_edit_route=self.handle_edit_route,
-            on_delete_route=self.handle_delete_route
+            on_delete_route=self.handle_delete_route,
+            on_view_stops=self.handle_view_stops
+        )
+        
+        self.paradas_view = ParadasView(
+            on_back=self.show_dashboard,
+            on_create_stop=self.handle_create_stop,
+            on_edit_stop=self.handle_edit_stop,
+            on_delete_stop=self.handle_delete_stop
         )
     
     # =============== MANEJADORES DE EVENTOS ===============
@@ -321,6 +332,257 @@ class ToursApp:
             self.dashboard_view.show_message(error_msg, "error")
             logger.error(error_msg)
 
+    def handle_view_stops(self, ruta):
+        """
+        Maneja la visualización de paradas de una ruta
+        
+        Args:
+            ruta: Ruta seleccionada
+        """
+        try:
+            if not self.current_user:
+                logger.warning("Intento de ver paradas sin autenticación")
+                self.show_login()
+                return
+            
+            # Obtener paradas de la ruta
+            resultado = self.paradas_controller.get_route_stops(ruta.id, self.current_user.id)
+            
+            if resultado["success"]:
+                paradas = resultado["paradas"]
+                logger.info(f"Mostrando {len(paradas)} paradas para ruta {ruta.nombre}")
+            else:
+                paradas = []
+                logger.warning(f"No se pudieron cargar paradas: {resultado['message']}")
+            
+            # Crear y mostrar la vista de paradas
+            content = self.paradas_view.create(user=self.current_user, ruta=ruta, paradas=paradas)
+            self.paradas_view.set_page_reference(self.page)
+            self._clear_and_show(content)
+            
+            # Mostrar mensaje si hubo error al cargar
+            if not resultado["success"]:
+                self.paradas_view.show_message(
+                    f"⚠️ {resultado['message']}", 
+                    "warning"
+                )
+            
+            logger.debug(f"Vista de paradas mostrada para ruta: {ruta.nombre}")
+            
+        except Exception as e:
+            logger.error(f"Error al mostrar paradas: {e}")
+            # Mostrar vista de paradas básica en caso de error
+            content = self.paradas_view.create(user=self.current_user, ruta=ruta, paradas=[])
+            self._clear_and_show(content)
+    
+    def handle_create_stop(self, route_id: int, nombre: str, descripcion: Optional[str]):
+        """
+        Maneja la creación de una nueva parada
+        
+        Args:
+            route_id: ID de la ruta
+            nombre: Nombre de la parada
+            descripcion: Descripción de la parada (puede ser None)
+        """
+        try:
+            if not self.current_user:
+                logger.warning("Intento de crear parada sin autenticación")
+                self.show_login()
+                return
+            
+            # Mostrar mensaje de carga
+            self.paradas_view.show_message("🔄 Creando parada...", "info")
+            
+            # Crear la parada
+            resultado = self.paradas_controller.create_stop(
+                route_id=route_id,
+                user_id=self.current_user.id,
+                nombre=nombre,
+                descripcion=descripcion
+            )
+            
+            if resultado["success"]:
+                # Mostrar mensaje de éxito
+                self.paradas_view.show_message(
+                    f"Parada '{nombre}' creada exitosamente", 
+                    "success"
+                )
+                
+                # Actualizar la lista de paradas
+                self._refresh_stops_in_view(route_id)
+                logger.info(f"Parada creada: {nombre} (Ruta: {route_id})")
+                
+            else:
+                # Mostrar error
+                self.paradas_view.show_message(
+                    resultado["message"], 
+                    "error"
+                )
+                logger.warning(f"Error al crear parada: {resultado['message']}")
+                
+        except Exception as e:
+            error_msg = "Error inesperado al crear la parada"
+            self.paradas_view.show_message(error_msg, "error")
+            logger.error(f"Error en crear parada: {e}")
+    
+    def handle_edit_stop(self, stop_id: int, route_id: int, nombre: str, descripcion: Optional[str]):
+        """
+        Maneja la edición de una parada existente
+        
+        Args:
+            stop_id: ID de la parada a editar
+            route_id: ID de la ruta
+            nombre: Nuevo nombre de la parada
+            descripcion: Nueva descripción de la parada (puede ser None)
+        """
+        try:
+            if not self.current_user:
+                logger.warning("Intento de editar parada sin autenticación")
+                self.show_login()
+                return
+            
+            # Mostrar mensaje de carga
+            self.paradas_view.show_message("🔄 Guardando cambios...", "info")
+            
+            # Editar la parada
+            resultado = self.paradas_controller.update_stop(
+                stop_id=stop_id,
+                route_id=route_id,
+                user_id=self.current_user.id,
+                nombre=nombre,
+                descripcion=descripcion
+            )
+            
+            if resultado["success"]:
+                # Mostrar mensaje de éxito
+                self.paradas_view.show_message(
+                    f"Parada '{nombre}' actualizada exitosamente", 
+                    "success"
+                )
+                
+                # Actualizar la lista de paradas
+                self._refresh_stops_in_view(route_id)
+                logger.info(f"Parada editada: ID {stop_id} -> {nombre}")
+                
+            else:
+                # Mostrar error
+                self.paradas_view.show_message(
+                    resultado["message"], 
+                    "error"
+                )
+                logger.warning(f"Error al editar parada: {resultado['message']}")
+                
+        except Exception as e:
+            error_msg = f"Error inesperado al editar parada: {str(e)}"
+            self.paradas_view.show_message(error_msg, "error")
+            logger.error(error_msg)
+    
+    def handle_delete_stop(self, stop_id: int, route_id: int, nombre: str):
+        """
+        Maneja la eliminación de una parada
+        
+        Args:
+            stop_id: ID de la parada a eliminar
+            route_id: ID de la ruta
+            nombre: Nombre de la parada (para logging y mensajes)
+        """
+        try:
+            if not self.current_user:
+                logger.warning("Intento de eliminar parada sin autenticación")
+                self.show_login()
+                return
+            
+            # Mostrar mensaje de carga
+            self.paradas_view.show_message("🔄 Eliminando parada...", "info")
+            
+            # Eliminar la parada
+            resultado = self.paradas_controller.delete_stop(
+                stop_id=stop_id,
+                route_id=route_id,
+                user_id=self.current_user.id
+            )
+            
+            if resultado["success"]:
+                # Mostrar mensaje de éxito
+                self.paradas_view.show_message(
+                    f"Parada '{nombre}' eliminada exitosamente", 
+                    "success"
+                )
+                
+                # Actualizar la lista de paradas
+                self._refresh_stops_in_view(route_id)
+                logger.info(f"Parada eliminada: ID {stop_id} - {nombre}")
+                
+            else:
+                # Mostrar error
+                self.paradas_view.show_message(
+                    resultado["message"], 
+                    "error"
+                )
+                logger.warning(f"Error al eliminar parada: {resultado['message']}")
+                
+        except Exception as e:
+            error_msg = f"Error inesperado al eliminar parada: {str(e)}"
+            self.paradas_view.show_message(error_msg, "error")
+            logger.error(error_msg)
+    
+    def _refresh_routes_in_dashboard(self):
+        """
+        Actualiza las rutas en el dashboard actual sin recargar toda la vista
+        """
+        if not self.current_user:
+            logger.warning("Intento de actualizar rutas sin autenticación")
+            return
+        
+        try:
+            # Obtener rutas del usuario
+            resultado = self.routes_controller.get_user_routes(self.current_user.id)
+            
+            if resultado["success"]:
+                routes = resultado["routes"]
+                # Actualizar las rutas en el dashboard view
+                self.dashboard_view.update_routes(routes)
+                logger.info(f"Rutas actualizadas en dashboard: {len(routes)} rutas")
+            else:
+                logger.warning(f"Error al actualizar rutas: {resultado['message']}")
+                # En caso de error, mostrar lista vacía
+                self.dashboard_view.update_routes([])
+                
+        except Exception as e:
+            logger.error(f"Error al actualizar rutas en dashboard: {e}")
+            # En caso de error, mostrar lista vacía
+            self.dashboard_view.update_routes([])
+    
+    def _refresh_stops_in_view(self, route_id: int):
+        """
+        Actualiza las paradas en la vista actual sin recargar toda la vista
+        
+        Args:
+            route_id: ID de la ruta
+        """
+        if not self.current_user:
+            logger.warning("Intento de actualizar paradas sin autenticación")
+            return
+        
+        try:
+            # Obtener paradas de la ruta
+            resultado = self.paradas_controller.get_route_stops(route_id, self.current_user.id)
+            
+            if resultado["success"]:
+                paradas = resultado["paradas"]
+                # Actualizar las paradas en la vista
+                self.paradas_view.update_stops(paradas)
+                logger.info(f"Paradas actualizadas en vista: {len(paradas)} paradas")
+            else:
+                logger.warning(f"Error al actualizar paradas: {resultado['message']}")
+                # En caso de error, mostrar lista vacía
+                self.paradas_view.update_stops([])
+                
+        except Exception as e:
+            logger.error(f"Error al actualizar paradas en vista: {e}")
+            # En caso de error, mostrar lista vacía
+            self.paradas_view.update_stops([])
+
     # =============== NAVEGACIÓN ===============
     
     def show_login(self):
@@ -420,33 +682,6 @@ class ToursApp:
         except Exception as e:
             logger.error(f"Error durante la limpieza: {e}")
     
-    def _refresh_routes_in_dashboard(self):
-        """
-        Actualiza las rutas en el dashboard actual sin recargar toda la vista
-        """
-        if not self.current_user:
-            logger.warning("Intento de actualizar rutas sin autenticación")
-            return
-        
-        try:
-            # Obtener rutas del usuario
-            resultado = self.routes_controller.get_user_routes(self.current_user.id)
-            
-            if resultado["success"]:
-                routes = resultado["routes"]
-                # Actualizar las rutas en el dashboard view
-                self.dashboard_view.update_routes(routes)
-                logger.info(f"Rutas actualizadas en dashboard: {len(routes)} rutas")
-            else:
-                logger.warning(f"Error al actualizar rutas: {resultado['message']}")
-                # En caso de error, mostrar lista vacía
-                self.dashboard_view.update_routes([])
-                
-        except Exception as e:
-            logger.error(f"Error al actualizar rutas en dashboard: {e}")
-            # En caso de error, mostrar lista vacía
-            self.dashboard_view.update_routes([])
-
 def main(page: ft.Page):
     """
     Función principal de la aplicación

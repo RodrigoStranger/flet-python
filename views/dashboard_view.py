@@ -13,7 +13,7 @@ class DashboardView:
     Vista del dashboard principal
     """
     
-    def __init__(self, on_logout: Callable, on_create_route: Callable, on_edit_route: Callable = None, on_delete_route: Callable = None):
+    def __init__(self, on_logout: Callable, on_create_route: Callable, on_edit_route: Callable = None, on_delete_route: Callable = None, on_view_stops: Callable = None):
         """
         Inicializa la vista del dashboard
         
@@ -22,11 +22,14 @@ class DashboardView:
             on_create_route: Callback para crear nueva ruta
             on_edit_route: Callback para editar ruta existente
             on_delete_route: Callback para eliminar ruta
+            on_view_stops: Callback para ver paradas de una ruta
         """
         self.on_logout = on_logout
         self.on_create_route = on_create_route
         self.on_edit_route = on_edit_route
         self.on_delete_route = on_delete_route
+        self.on_view_stops = on_view_stops
+        self.on_view_stops = on_view_stops
         self.user = None
         self.routes = []
         self.message_container = None
@@ -455,10 +458,13 @@ class DashboardView:
                 # Footer con fecha
                 ft.Row([
                     ft.Text(f"📅 {fecha_text}", size=10, color="grey"),
-                    ft.Row([
-                        ft.Text("📋", size=12),
-                        ft.Text("Ver paradas", size=10),
-                    ], spacing=3)
+                    ft.TextButton(
+                        content=ft.Row([
+                            ft.Text("📋", size=12),
+                            ft.Text("Ver paradas", size=10),
+                        ], spacing=3),
+                        on_click=lambda e, route=ruta: self._on_view_stops_click(route)
+                    )
                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
             ], spacing=8),
             padding=15,
@@ -819,3 +825,14 @@ class DashboardView:
         """Cierra un diálogo"""
         dialog.open = False
         self._page_ref.update()
+    
+    def _on_view_stops_click(self, ruta: Ruta):
+        """
+        Maneja el click del botón Ver paradas
+        
+        Args:
+            ruta: La ruta seleccionada
+        """
+        print(f"DEBUG: Ver paradas clicado para ruta: {ruta.nombre}")
+        if self.on_view_stops:
+            self.on_view_stops(ruta)

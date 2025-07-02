@@ -2,6 +2,7 @@
 from .user_model import UserModel, User
 from .validators import EmailValidator, PasswordValidator, NameValidator
 from .ruta import Ruta
+from .parada import Parada
 
 __all__ = [
     'User',
@@ -9,5 +10,6 @@ __all__ = [
     'EmailValidator', 
     'PasswordValidator',
     'NameValidator',
-    'Ruta'
+    'Ruta',
+    'Parada'
 ]
