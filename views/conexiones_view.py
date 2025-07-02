@@ -12,7 +12,7 @@ class ConexionesView:
     Vista para gestionar conexiones entre paradas
     """
     
-    def __init__(self, on_back: Callable, on_create_connection: Callable, on_delete_connection: Callable = None):
+    def __init__(self, on_back: Callable, on_create_connection: Callable, on_delete_connection: Callable = None, on_update_connection: Callable = None):
         """
         Inicializa la vista de conexiones
         
@@ -20,10 +20,12 @@ class ConexionesView:
             on_back: Callback para volver a la vista de paradas
             on_create_connection: Callback para crear nueva conexión
             on_delete_connection: Callback para eliminar conexión
+            on_update_connection: Callback para actualizar conexión
         """
         self.on_back = on_back
         self.on_create_connection = on_create_connection
         self.on_delete_connection = on_delete_connection
+        self.on_update_connection = on_update_connection
         self.user = None
         self.ruta = None
         self.parada = None
@@ -172,12 +174,15 @@ class ConexionesView:
             print("ERROR: No hay referencia a la página (self._page_ref es None)")
             return
         
-        if not self.paradas_disponibles:
-            # Mostrar mensaje si no hay paradas disponibles
+        # Filtrar paradas disponibles usando la función auxiliar
+        filtered_paradas = self._filter_valid_destinations(self.paradas_disponibles)
+        
+        if not filtered_paradas:
+            # Mostrar mensaje si no hay paradas disponibles después del filtrado
             dlg = ft.AlertDialog(
                 modal=True,
                 title=ft.Text("⚠️ Sin paradas disponibles"),
-                content=ft.Text("No hay paradas disponibles para crear conexiones. Todas las paradas de esta ruta ya están conectadas.", size=14),
+                content=ft.Text("No hay paradas disponibles para crear conexiones. Todas las paradas de esta ruta ya están conectadas o no son válidas como destino.", size=14),
                 actions=[
                     ft.TextButton("Entendido", on_click=lambda e: self._close_dialog(dlg)),
                 ],
@@ -185,9 +190,12 @@ class ConexionesView:
             self._page_ref.open(dlg)
             return
         
+        # Filtrar paradas para mostrar solo destinos válidos (sin la parada actual y sin las ya conectadas)
+        filtered_paradas = self._filter_valid_destinations(self.paradas_disponibles)
+        
         # Crear selector de parada destino
         parada_options = []
-        for parada_data in self.paradas_disponibles:
+        for parada_data in filtered_paradas:
             parada_options.append(
                 ft.dropdown.Option(
                     key=str(parada_data["id"]),
@@ -243,6 +251,19 @@ class ConexionesView:
                 if not parada_dropdown.value:
                     show_error("❌ Debes seleccionar una parada destino")
                     return
+                
+                # Validar que la parada destino no sea la misma que la parada origen
+                parada_destino_id = int(parada_dropdown.value)
+                if parada_destino_id == self.parada.id:
+                    show_error("❌ Error: No puedes conectar una parada consigo misma")
+                    return
+                    
+                # Verificar si ya existe una conexión con este destino
+                for conexion in self.conexiones:
+                    if (conexion.parada_origen_id == self.parada.id and 
+                        conexion.parada_destino_id == parada_destino_id):
+                        show_error("❌ Error: Ya existe una conexión con esta parada")
+                        return
                 
                 # Validar distancia
                 distancia_str = distancia_field.value
@@ -369,6 +390,13 @@ class ConexionesView:
                         icon_size=20,
                         tooltip="Eliminar conexión",
                         on_click=lambda e, conn=conexion: self._confirm_delete_connection(conn)
+                    ),
+                    ft.IconButton(
+                        icon=ft.Icons.EDIT,
+                        icon_color="orange",
+                        icon_size=20,
+                        tooltip="Editar conexión",
+                        on_click=lambda e, conn=conexion: self._open_edit_connection_form(conn)
                     )
                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
             ], spacing=8),
@@ -447,13 +475,183 @@ class ConexionesView:
         
         self._page_ref.open(dlg)
     
-    def _close_dialog(self, dialog):
-        """Cierra un diálogo"""
-        dialog.open = False
-        if self._page_ref:
+    def _open_edit_connection_form(self, conexion: Conexion):
+        """Abre el formulario para editar una conexión existente"""
+        
+        # Verificar si tenemos referencia a la página
+        if not self._page_ref:
+            print("ERROR: No hay referencia a la página (self._page_ref es None)")
+            return
+        
+        # Para editar, permitiremos cambiar tanto la parada destino como la distancia
+        parada_actual_id = conexion.parada_destino_id
+        parada_actual_nombre = conexion.parada_destino_nombre or f"Parada {parada_actual_id}"
+        
+        # Verificación crítica: asegurarse de que no se está editando una conexión a sí misma
+        if parada_actual_id == self.parada.id:
+            self.show_message("⚠️ Error: No se puede editar una conexión a la misma parada", "error")
+            return
+            
+        # Obtener todas las paradas disponibles para la edición
+        # Incluiremos tanto las disponibles como la parada destino actual
+        filtered_paradas = self._filter_valid_destinations(self.paradas_disponibles)
+        
+        # Crear opciones para el dropdown incluyendo todas las paradas disponibles
+        parada_options = []
+        
+        # Asegurarse de incluir siempre la parada actual como opción
+        parada_actual_incluida = False
+        
+        # Agregar todas las paradas disponibles
+        for parada_data in filtered_paradas:
+            parada_options.append(
+                ft.dropdown.Option(
+                    key=str(parada_data["id"]),
+                    text=parada_data["nombre"]
+                )
+            )
+            if parada_data["id"] == parada_actual_id:
+                parada_actual_incluida = True
+        
+        # Si la parada actual no está en las filtradas, agregarla manualmente
+        if not parada_actual_incluida:
+            parada_options.append(
+                ft.dropdown.Option(
+                    key=str(parada_actual_id),
+                    text=parada_actual_nombre
+                )
+            )
+        
+        # Usar la distancia actual como valor por defecto
+        distancia_default = conexion.distancia
+        
+        parada_dropdown = ft.Dropdown(
+            label="Parada destino",
+            hint_text="Selecciona una parada destino",
+            options=parada_options,
+            value=str(parada_actual_id),  # Valor por defecto (la parada destino actual)
+            width=300
+        )
+        
+        # Campo de distancia
+        distancia_field = ft.TextField(
+            label="Distancia (km)", 
+            hint_text="Ej: 2.5",
+            value=str(distancia_default),  # Valor por defecto
+            width=300,
+            keyboard_type=ft.KeyboardType.NUMBER
+        )
+        
+        # Contenedor para mensajes de error
+        error_container = ft.Container()
+        
+        def show_error(message):
+            """Muestra un mensaje de error en el formulario"""
+            error_container.content = ft.Container(
+                content=ft.Text(
+                    message, 
+                    color="red", 
+                    size=12,
+                    text_align=ft.TextAlign.CENTER
+                ),
+                padding=5,
+                border_radius=5,
+                bgcolor="red100",
+                border=ft.border.all(1, "red")
+            )
             self._page_ref.update()
-        else:
-            print("ERROR: No hay referencia a la página (self._page_ref es None) al intentar cerrar diálogo")
+        
+        def clear_error():
+            """Limpia el mensaje de error"""
+            error_container.content = None
+            self._page_ref.update()
+        
+        def handle_close(e):
+            if e.control.text == "Guardar Cambios":
+                # Limpiar errores previos
+                clear_error()
+                
+                # Validar parada destino seleccionada
+                if not parada_dropdown.value:
+                    show_error("❌ Debes seleccionar una parada destino")
+                    return
+                
+                # Validar que la parada destino no sea la misma que la parada origen
+                parada_destino_id = int(parada_dropdown.value)
+                if parada_destino_id == self.parada.id:
+                    show_error("❌ Error: No puedes conectar una parada consigo misma")
+                    return
+                
+                # Verificar si ya existe una conexión con este destino (excepto la que estamos editando)
+                for con in self.conexiones:
+                    if (con.parada_origen_id == self.parada.id and 
+                        con.parada_destino_id == parada_destino_id and
+                        # Permitir el destino actual
+                        con.parada_destino_id != parada_actual_id):
+                        show_error("❌ Error: Ya existe una conexión con esta parada")
+                        return
+                
+                # Validar distancia (campo obligatorio)
+                distancia_str = distancia_field.value
+                if not distancia_str or not distancia_str.strip():
+                    show_error("❌ Error: La distancia es obligatoria")
+                    return
+                
+                try:
+                    distancia = float(distancia_str.strip())
+                    if distancia < 0:
+                        show_error("❌ Error: La distancia debe ser mayor o igual a 0")
+                        return
+                    if distancia == 0:
+                        # Mostrar una advertencia, pero permitir continuar
+                        show_error("⚠️ Advertencia: Has ingresado una distancia de 0 km")
+                        # No hacemos return para permitir continuar
+                except ValueError:
+                    show_error("❌ Error: La distancia debe ser un número válido")
+                    return
+                
+                # Cerrar diálogo y guardar cambios
+                dlg.open = False
+                self._page_ref.update()
+                
+                parada_destino_id = int(parada_dropdown.value)
+                
+                # Verificar si el destino ha cambiado
+                if parada_destino_id != parada_actual_id:
+                    print(f"Actualizando conexión: {self.parada.id} -> {parada_destino_id} (antes era {parada_actual_id}), Nueva distancia: {distancia}")
+                else:
+                    print(f"Actualizando solo distancia de conexión: {self.parada.id} -> {parada_destino_id}, Nueva distancia: {distancia}")
+                    
+                if self.on_update_connection and self.parada and self.ruta:
+                    # Pasamos el ID de la parada destino anterior para que el controlador sepa si está cambiando
+                    self.on_update_connection(self.parada.id, parada_destino_id, distancia, self.ruta.id, parada_actual_id)
+            else:
+                # Cancelar
+                dlg.open = False
+                self._page_ref.update()
+        
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("✏️ Editar Distancia de Conexión"),
+            content=ft.Column([
+                ft.Text("Modifica la distancia de la conexión:", size=14),
+                ft.Container(height=10),
+                ft.Text(f"Desde: {self.parada.nombre}", size=12, weight=ft.FontWeight.BOLD),
+                ft.Text(f"Hacia: {parada_actual_nombre}", size=12, weight=ft.FontWeight.BOLD),
+                ft.Container(height=10),
+                parada_dropdown,
+                ft.Container(height=10),
+                distancia_field,
+                ft.Container(height=15),
+                error_container,  # Contenedor para errores
+            ], tight=True, height=320),
+            actions=[
+                ft.TextButton("Cancelar", on_click=handle_close),
+                ft.ElevatedButton("Guardar Cambios", on_click=handle_close, bgcolor="green", color="white"),
+            ],
+        )
+        
+        self._page_ref.open(dlg)
     
     def update_connections(self, conexiones: List[Conexion], paradas_disponibles: List[dict] = None):
         """
@@ -461,11 +659,16 @@ class ConexionesView:
         
         Args:
             conexiones: Nueva lista de conexiones
-            paradas_disponibles: Nueva lista de paradas disponibles
+            paradas_disponibles: Nueva lista de paradas disponibles (se filtrarán automáticamente)
         """
         self.conexiones = conexiones
         if paradas_disponibles is not None:
             self.paradas_disponibles = paradas_disponibles
+            # Filtrar paradas para eliminar las que ya tienen conexión y la actual
+            filtered_paradas = self._filter_valid_destinations(paradas_disponibles)
+            # Imprimir un mensaje de depuración
+            print(f"Paradas disponibles filtradas: {len(filtered_paradas)} de {len(paradas_disponibles)}")
+            
         self._update_connections_content()
         if self._page_ref:
             self._page_ref.update()
@@ -536,6 +739,41 @@ class ConexionesView:
         self.message_container.content = None
         if self._page_ref:
             self._page_ref.update()
+    
+    def _close_dialog(self, dlg):
+        """Cierra un diálogo modal"""
+        if dlg and hasattr(dlg, "open"):
+            dlg.open = False
+            if self._page_ref:
+                self._page_ref.update()
+    
+    def _filter_valid_destinations(self, paradas_list):
+        """
+        Filtra las paradas para mostrar solo destinos válidos (excluye la actual y las ya conectadas)
+        
+        Args:
+            paradas_list: Lista de paradas para filtrar
+            
+        Returns:
+            Lista de paradas filtradas
+        """
+        if not paradas_list or not self.parada:
+            return []
+            
+        # Crear una lista de IDs de paradas ya conectadas desde la actual
+        connected_ids = []
+        for conexion in self.conexiones:
+            if conexion.parada_origen_id == self.parada.id:
+                connected_ids.append(conexion.parada_destino_id)
+        
+        # Filtrar paradas (excluir la actual y las ya conectadas)
+        filtered_list = []
+        for parada_data in paradas_list:
+            if (parada_data["id"] != self.parada.id and 
+                parada_data["id"] not in connected_ids):
+                filtered_list.append(parada_data)
+                
+        return filtered_list
     
     def set_page_reference(self, page):
         """Establece referencia a la página para actualizaciones"""

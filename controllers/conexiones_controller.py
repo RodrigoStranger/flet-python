@@ -190,6 +190,15 @@ class ConexionesController:
                     "conexion": None
                 }
             
+            # Verificar que la parada origen y destino son diferentes
+            if parada_origen_id == parada_destino_id:
+                cursor.close()
+                return {
+                    "success": False,
+                    "message": "⚠️ Error: No se puede crear una conexión de una parada a sí misma",
+                    "conexion": None
+                }
+                
             # Verificar que no existe ya esta conexión
             existing_check_query = """
                 SELECT COUNT(*) as count
@@ -487,12 +496,12 @@ class ConexionesController:
                     "paradas": []
                 }
             
-            # Obtener todas las paradas disponibles (excluyendo solo la parada origen y las que ya tienen conexión saliente)
+            # Obtener todas las paradas disponibles (excluyendo la parada origen y las que ya tienen conexión saliente)
             query = """
                 SELECT p.id, p.nombre, p.descripcion
                 FROM paradas p
                 WHERE p.ruta_id = %s 
-                AND p.id != %s  -- Excluir la parada origen
+                AND p.id != %s  -- Excluir la parada origen (importante para evitar conexiones a sí misma)
                 AND p.id NOT IN (
                     -- Excluir las paradas que ya tienen conexión saliente desde la parada origen
                     SELECT parada_destino_id FROM vecinos WHERE parada_origen_id = %s
@@ -645,6 +654,181 @@ class ConexionesController:
                 "success": False,
                 "message": "Error al obtener las paradas",
                 "paradas": []
+            }
+        
+        finally:
+            self.db.disconnect()
+    
+    def update_connection(self, route_id: int, user_id: int, parada_origen_id: int, 
+                         parada_destino_id: int, distancia: float, 
+                         parada_destino_anterior_id: int = None) -> Dict[str, Any]:
+        """
+        Actualiza una conexión existente entre paradas
+        
+        Args:
+            route_id: ID de la ruta
+            user_id: ID del usuario (para verificar permisos)
+            parada_origen_id: ID de la parada origen
+            parada_destino_id: ID de la nueva parada destino
+            distancia: Nueva distancia entre las paradas
+            parada_destino_anterior_id: ID de la parada destino anterior (si se está cambiando)
+            
+        Returns:
+            Dict con resultado de la operación
+        """
+        try:
+            # Validar que la parada origen y destino son diferentes
+            if parada_origen_id == parada_destino_id:
+                return {
+                    "success": False,
+                    "message": "⚠️ Error: No se puede conectar una parada consigo misma",
+                }
+                
+            # Validar la distancia
+            if distancia < 0:
+                return {
+                    "success": False,
+                    "message": "La distancia no puede ser negativa",
+                }
+            
+            # Conectar a la base de datos
+            if not self.db.connect():
+                return {
+                    "success": False,
+                    "message": "Error de conexión a la base de datos"
+                }
+            
+            # Verificar que la ruta pertenece al usuario
+            route_check_query = """
+                SELECT COUNT(*) as count
+                FROM rutas 
+                WHERE id = %s AND usuario_id = %s
+            """
+            
+            connection = self.db.get_connection()
+            cursor = connection.cursor(dictionary=True)
+            cursor.execute(route_check_query, (route_id, user_id))
+            route_result = cursor.fetchone()
+            
+            if route_result['count'] == 0:
+                cursor.close()
+                return {
+                    "success": False,
+                    "message": "Ruta no encontrada o no tienes permisos"
+                }
+            
+            # Verificar que ambas paradas pertenecen a la ruta
+            stops_check_query = """
+                SELECT COUNT(*) as count
+                FROM paradas 
+                WHERE ruta_id = %s AND id IN (%s, %s)
+            """
+            
+            cursor.execute(stops_check_query, (route_id, parada_origen_id, parada_destino_id))
+            stops_result = cursor.fetchone()
+            
+            if stops_result['count'] != 2:
+                cursor.close()
+                return {
+                    "success": False,
+                    "message": "Una o ambas paradas no pertenecen a esta ruta"
+                }
+            
+            # Verificar si estamos modificando el destino o solo la distancia
+            if parada_destino_anterior_id and parada_destino_id != parada_destino_anterior_id:
+                # Estamos cambiando la parada destino, así que necesitamos verificar:
+                
+                # 1. Que la conexión original existe
+                existing_check_query = """
+                    SELECT COUNT(*) as count
+                    FROM vecinos 
+                    WHERE parada_origen_id = %s AND parada_destino_id = %s
+                """
+                cursor.execute(existing_check_query, (parada_origen_id, parada_destino_anterior_id))
+                existing_result = cursor.fetchone()
+                
+                if existing_result['count'] == 0:
+                    # La conexión original no existe
+                    cursor.close()
+                    return {
+                        "success": False,
+                        "message": "No existe la conexión original que intentas modificar"
+                    }
+                
+                # 2. Que no exista una conexión con el nuevo destino
+                cursor.execute(existing_check_query, (parada_origen_id, parada_destino_id))
+                existing_new_result = cursor.fetchone()
+                
+                if existing_new_result['count'] > 0:
+                    # Ya existe una conexión hacia el nuevo destino
+                    cursor.close()
+                    return {
+                        "success": False,
+                        "message": "Ya existe una conexión hacia la nueva parada destino"
+                    }
+                
+                # Todo está bien, eliminar la conexión anterior y crear la nueva
+                delete_query = """
+                    DELETE FROM vecinos 
+                    WHERE parada_origen_id = %s AND parada_destino_id = %s
+                """
+                cursor.execute(delete_query, (parada_origen_id, parada_destino_anterior_id))
+                
+                # Crear la nueva conexión
+                insert_query = """
+                    INSERT INTO vecinos (parada_origen_id, parada_destino_id, distancia)
+                    VALUES (%s, %s, %s)
+                """
+                cursor.execute(insert_query, (parada_origen_id, parada_destino_id, distancia))
+                
+                action_text = "actualizada (cambiado destino)"
+            else:
+                # Solo estamos actualizando la distancia
+                # Verificar que existe la conexión
+                existing_check_query = """
+                    SELECT COUNT(*) as count
+                    FROM vecinos 
+                    WHERE parada_origen_id = %s AND parada_destino_id = %s
+                """
+                
+                cursor.execute(existing_check_query, (parada_origen_id, parada_destino_id))
+                existing_result = cursor.fetchone()
+                
+                if existing_result['count'] == 0:
+                    # La conexión no existe, devolver error
+                    cursor.close()
+                    return {
+                        "success": False,
+                        "message": "No existe una conexión entre estas paradas para actualizar"
+                    }
+                    
+                # Actualizar la conexión existente
+                update_query = """
+                    UPDATE vecinos 
+                    SET distancia = %s
+                    WHERE parada_origen_id = %s AND parada_destino_id = %s
+                """
+                
+                cursor.execute(update_query, (distancia, parada_origen_id, parada_destino_id))
+                action_text = "actualizada (solo distancia)"
+            connection.commit()
+            logger.info(f"Conexión actualizada: {parada_origen_id} → {parada_destino_id} (nueva distancia: {distancia}km)")
+            
+            action_text = "actualizada"
+            
+            cursor.close()
+            
+            return {
+                "success": True,
+                "message": "Conexión actualizada exitosamente",
+                "message": "Conexión actualizada exitosamente"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error al actualizar conexión: {e}")
+            return {
+                "success": False,
+                "message": "Error al actualizar la conexión"
             }
         
         finally:

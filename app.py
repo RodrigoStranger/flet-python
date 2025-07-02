@@ -91,7 +91,8 @@ class ToursApp:
         self.conexiones_view = ConexionesView(
             on_back=self.handle_back_to_stops,
             on_create_connection=self.handle_create_connection,
-            on_delete_connection=self.handle_delete_connection
+            on_delete_connection=self.handle_delete_connection,
+            on_update_connection=self.handle_update_connection
         )
     
     # =============== MANEJADORES DE EVENTOS ===============
@@ -717,6 +718,60 @@ class ToursApp:
                 
         except Exception as e:
             error_msg = f"Error inesperado al eliminar conexión: {str(e)}"
+            self.conexiones_view.show_message(error_msg, "error")
+            logger.error(error_msg)
+    
+    def handle_update_connection(self, parada_origen_id: int, parada_destino_id: int, distancia: float, route_id: int, parada_destino_anterior_id: int = None):
+        """
+        Maneja la actualización de una conexión existente (puede cambiar destino y/o distancia)
+        
+        Args:
+            parada_origen_id: ID de la parada origen
+            parada_destino_id: ID de la nueva parada destino
+            distancia: Nueva distancia entre las paradas
+            route_id: ID de la ruta
+            parada_destino_anterior_id: ID anterior de la parada destino (si se está cambiando)
+        """
+        try:
+            if not self.current_user:
+                logger.warning("Intento de actualizar conexión sin autenticación")
+                self.show_login()
+                return
+            
+            # Mostrar mensaje de carga
+            self.conexiones_view.show_message("🔄 Actualizando conexión...", "info")
+            
+            # Actualizar la conexión
+            resultado = self.conexiones_controller.update_connection(
+                parada_origen_id=parada_origen_id,
+                parada_destino_id=parada_destino_id,
+                distancia=distancia,
+                route_id=route_id,
+                user_id=self.current_user.id,
+                parada_destino_anterior_id=parada_destino_anterior_id
+            )
+            
+            if resultado["success"]:
+                # Mostrar mensaje de éxito
+                self.conexiones_view.show_message(
+                    "Conexión actualizada exitosamente", 
+                    "success"
+                )
+                
+                # Actualizar la lista de conexiones
+                self._refresh_connections_in_view(parada_origen_id, route_id)
+                logger.info(f"Conexión actualizada: {parada_origen_id} -> {parada_destino_id}, nueva distancia: {distancia}")
+                
+            else:
+                # Mostrar error
+                self.conexiones_view.show_message(
+                    resultado["message"], 
+                    "error"
+                )
+                logger.warning(f"Error al actualizar conexión: {resultado['message']}")
+                
+        except Exception as e:
+            error_msg = f"Error inesperado al actualizar conexión: {str(e)}"
             self.conexiones_view.show_message(error_msg, "error")
             logger.error(error_msg)
     

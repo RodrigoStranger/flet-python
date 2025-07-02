@@ -44,7 +44,7 @@ class Conexion:
             if not self.parada_destino_id or self.parada_destino_id <= 0:
                 return False
             
-            # No puede conectarse a sí misma
+            # No puede conectarse a sí misma (validación crítica)
             if self.parada_origen_id == self.parada_destino_id:
                 return False
             
@@ -74,7 +74,7 @@ class Conexion:
                 errors.append("ID de parada destino inválido")
             
             if self.parada_origen_id == self.parada_destino_id:
-                errors.append("La parada no puede conectarse a sí misma")
+                errors.append("⚠️ Error: La parada no puede conectarse a sí misma")
             
             if self.distancia is None or self.distancia < 0:
                 errors.append("La distancia debe ser mayor o igual a 0")
