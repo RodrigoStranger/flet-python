@@ -204,7 +204,6 @@ class RutaGraphView:
         import math
         stack_controls = []
 
-        # Primero dibujamos las aristas (conexiones)
         for conexion in self.conexiones:
             origen_pos = self.node_positions.get(conexion.parada_origen_id)
             destino_pos = self.node_positions.get(conexion.parada_destino_id)
@@ -217,9 +216,9 @@ class RutaGraphView:
                 length = math.sqrt(dx ** 2 + dy ** 2)
                 angle = math.degrees(math.atan2(dy, dx))
 
-                # Dibujar la línea (simulada con un Container rotado)
+                # Línea
                 line = ft.Container(
-                    width=length - self.node_radius,  # Deja espacio para la flecha
+                    width=length - self.node_radius,
                     height=2,
                     bgcolor="green",
                     left=x1,
@@ -228,25 +227,28 @@ class RutaGraphView:
                 )
                 stack_controls.append(line)
 
-                # Dibujar la flecha (▶) cerca del nodo destino
-                arrow_offset = 10  # Distancia de la flecha al borde del nodo destino
-                arrow_x = x2 - self.node_radius * math.cos(angle * math.pi / 180) - arrow_offset * math.cos(angle * math.pi / 180)
-                arrow_y = y2 - self.node_radius * math.sin(angle * math.pi / 180) - arrow_offset * math.sin(angle * math.pi / 180)
-                arrow = ft.Text(
-                    "▶",
-                    size=18,
+                # Calcular la punta de la línea (borde del nodo destino)
+                arrow_tip_x = x2 - self.node_radius * math.cos(angle * math.pi / 180)
+                arrow_tip_y = y2 - self.node_radius * math.sin(angle * math.pi / 180)
+                # Calcular posición un poco antes del nodo destino para el texto 'DIR'
+                dir_offset = 32  # distancia antes del nodo destino
+                dir_x = x2 - (self.node_radius + dir_offset) * math.cos(angle * math.pi / 180)
+                dir_y = y2 - (self.node_radius + dir_offset) * math.sin(angle * math.pi / 180)
+                # Marca de dirección: texto 'DIR' cerca del nodo destino, sobre la línea
+                direction_mark = ft.Text(
+                    "->",
+                    size=14,
                     color="green",
-                    left=arrow_x - 9,  # Ajuste visual
-                    top=arrow_y - 9,   # Ajuste visual
+                    left=dir_x - 12,  # 12 = la mitad del ancho estimado del texto
+                    top=dir_y - 30,   # Subido más arriba sobre la línea
                     rotate=angle,
+                    weight=ft.FontWeight.BOLD,
                 )
-                stack_controls.append(arrow)
+                stack_controls.append(direction_mark)
 
-                # Calcular punto medio para mostrar la distancia
+                # Distancia
                 mid_x = (x1 + x2) / 2
                 mid_y = (y1 + y2) / 2
-
-                # Texto con la distancia
                 distance_text = ft.Text(
                     f"{conexion.distancia} km",
                     size=10,
@@ -257,13 +259,11 @@ class RutaGraphView:
                 )
                 stack_controls.append(distance_text)
 
-        # Luego dibujamos los nodos (paradas)
+        # Nodos
         for parada in self.paradas:
             pos = self.node_positions.get(parada.id)
             if pos:
                 x, y = pos
-
-                # Dibujar círculo (nodo)
                 circle = ft.Container(
                     width=self.node_radius * 2,
                     height=self.node_radius * 2,
@@ -275,8 +275,6 @@ class RutaGraphView:
                     top=y - self.node_radius,
                 )
                 stack_controls.append(circle)
-
-                # Texto con nombre de la parada
                 name_text = ft.Text(
                     parada.nombre,
                     size=12,
