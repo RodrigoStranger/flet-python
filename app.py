@@ -17,6 +17,7 @@ from views.register_view import RegisterView
 from views.dashboard_view import DashboardView
 from views.paradas_view import ParadasView
 from views.conexiones_view import ConexionesView
+from views.ruta_graph_view import RutaGraphView
 from models import User
 
 # Configurar logging
@@ -85,7 +86,8 @@ class ToursApp:
             on_create_stop=self.handle_create_stop,
             on_edit_stop=self.handle_edit_stop,
             on_delete_stop=self.handle_delete_stop,
-            on_view_connections=self.handle_view_connections
+            on_view_connections=self.handle_view_connections,
+            on_visualize_route=self.handle_visualize_route
         )
         
         self.conexiones_view = ConexionesView(
@@ -93,6 +95,10 @@ class ToursApp:
             on_create_connection=self.handle_create_connection,
             on_delete_connection=self.handle_delete_connection,
             on_update_connection=self.handle_update_connection
+        )
+        
+        self.ruta_graph_view = RutaGraphView(
+            on_back=self.handle_back_to_stops
         )
     
     # =============== MANEJADORES DE EVENTOS ===============
@@ -777,9 +783,15 @@ class ToursApp:
     
     def handle_back_to_stops(self):
         """
-        Maneja el regreso de la vista de conexiones a la vista de paradas
+        Maneja el regreso de la vista de conexiones o del grafo a la vista de paradas
         """
-        # Obtener la parada y ruta actuales de la vista de conexiones
+        # Primero verificar si estamos en la vista del grafo
+        if hasattr(self, 'ruta_graph_view') and hasattr(self.ruta_graph_view, 'ruta') and self.ruta_graph_view.ruta:
+            ruta = self.ruta_graph_view.ruta
+            self.handle_view_stops(ruta)
+            return
+            
+        # Si no, asumimos que estamos en la vista de conexiones
         parada = self.conexiones_view.parada
         ruta = self.conexiones_view.ruta
         
@@ -789,6 +801,61 @@ class ToursApp:
         else:
             # Si no hay contexto, volver al dashboard
             self.show_dashboard()
+    
+    def handle_visualize_route(self, ruta):
+        """
+        Maneja la visualización del grafo de una ruta
+        
+        Args:
+            ruta: Ruta seleccionada
+        """
+        try:
+            if not self.current_user:
+                logger.warning("Intento de visualizar ruta sin autenticación")
+                self.show_login()
+                return
+            
+            # Obtener paradas de la ruta
+            paradas_result = self.paradas_controller.get_route_stops(ruta.id, self.current_user.id)
+            
+            if not paradas_result["success"]:
+                logger.warning(f"Error al cargar paradas para visualización: {paradas_result['message']}")
+                self.paradas_view.show_message(f"Error al cargar paradas: {paradas_result['message']}", "error")
+                return
+            
+            paradas = paradas_result["paradas"]
+            
+            if len(paradas) == 0:
+                self.paradas_view.show_message("No hay paradas para visualizar en esta ruta", "warning")
+                return
+            
+            # Obtener conexiones de la ruta
+            conexiones_result = self.conexiones_controller.get_route_connections(ruta.id, self.current_user.id)
+            
+            if not conexiones_result["success"]:
+                logger.warning(f"Error al cargar conexiones para visualización: {conexiones_result['message']}")
+                self.paradas_view.show_message(f"Error al cargar conexiones: {conexiones_result['message']}", "error")
+                return
+            
+            conexiones = conexiones_result["conexiones"]
+            
+            # Crear y mostrar la vista del grafo
+            content = self.ruta_graph_view.create(
+                user=self.current_user,
+                ruta=ruta,
+                paradas=paradas,
+                conexiones=conexiones,
+                page=self.page
+            )
+            self.page.controls = [content]
+            self.page.update()
+            
+            logger.info(f"Visualizando grafo para ruta '{ruta.nombre}' con {len(paradas)} paradas y {len(conexiones)} conexiones")
+            
+        except Exception as e:
+            error_msg = f"Error inesperado al visualizar ruta: {str(e)}"
+            self.paradas_view.show_message(error_msg, "error")
+            logger.error(error_msg)
     
     def _refresh_routes_in_dashboard(self):
         """

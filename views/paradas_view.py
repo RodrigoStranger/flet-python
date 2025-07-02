@@ -12,7 +12,9 @@ class ParadasView:
     Vista para gestionar paradas de una ruta
     """
     
-    def __init__(self, on_back: Callable, on_create_stop: Callable, on_edit_stop: Callable = None, on_delete_stop: Callable = None, on_view_connections: Callable = None):
+    def __init__(self, on_back: Callable, on_create_stop: Callable, on_edit_stop: Callable = None, 
+                 on_delete_stop: Callable = None, on_view_connections: Callable = None,
+                 on_visualize_route: Callable = None):
         """
         Inicializa la vista de paradas
         
@@ -22,12 +24,14 @@ class ParadasView:
             on_edit_stop: Callback para editar parada existente
             on_delete_stop: Callback para eliminar parada
             on_view_connections: Callback para ver conexiones de una parada
+            on_visualize_route: Callback para visualizar el grafo de la ruta
         """
         self.on_back = on_back
         self.on_create_stop = on_create_stop
         self.on_edit_stop = on_edit_stop
         self.on_delete_stop = on_delete_stop
         self.on_view_connections = on_view_connections
+        self.on_visualize_route = on_visualize_route
         self.user = None
         self.ruta = None
         self.paradas = []
@@ -93,20 +97,36 @@ class ParadasView:
                 # Mensaje container
                 self.message_container,
                 
-                # Título de paradas y botón crear
+                # Título de paradas y botones
                 ft.Container(
                     content=ft.Row([
                         ft.Text("🚏 Paradas", size=24, weight=ft.FontWeight.BOLD),
-                        ft.ElevatedButton(
-                            content=ft.Row([
-                                ft.Text("➕", size=16),
-                                ft.Text("Nueva Parada", size=14)
-                            ], spacing=8),
-                            on_click=self._on_create_stop_click,
-                            bgcolor="green",
-                            color="white",
-                            height=40
-                        ),
+                        ft.Row([
+                            ft.ElevatedButton(
+                                content=ft.Row([
+                                    ft.Text("🔍", size=16),
+                                    ft.Text("Visualizar Ruta", size=14)
+                                ], spacing=8),
+                                on_click=self._on_visualize_route_click,
+                                bgcolor="blue",
+                                color="white",
+                                height=40,
+                                style=ft.ButtonStyle(
+                                    shape=ft.RoundedRectangleBorder(radius=8)
+                                )
+                            ),
+                            ft.Container(width=10),
+                            ft.ElevatedButton(
+                                content=ft.Row([
+                                    ft.Text("➕", size=16),
+                                    ft.Text("Nueva Parada", size=14)
+                                ], spacing=8),
+                                on_click=self._on_create_stop_click,
+                                bgcolor="green",
+                                color="white",
+                                height=40
+                            ),
+                        ], spacing=10)
                     ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                     padding=ft.padding.symmetric(horizontal=10)
                 ),
@@ -135,6 +155,16 @@ class ParadasView:
     def _on_back_click(self, e):
         """Maneja el click del botón de volver"""
         self.on_back()
+    
+    def _on_visualize_route_click(self, e):
+        """Maneja el click del botón visualizar ruta"""
+        if hasattr(self, 'on_visualize_route') and self.on_visualize_route:
+            if self.ruta:
+                self.on_visualize_route(self.ruta)
+            else:
+                self.show_message("No hay una ruta seleccionada para visualizar", "warning")
+        else:
+            self.show_message("Función de visualización de ruta no configurada", "warning")
     
     def _on_create_stop_click(self, e):
         """Maneja el click del botón crear parada"""
