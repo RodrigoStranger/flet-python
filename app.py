@@ -1,8 +1,8 @@
 import flet as ft
-from config.db import connect_db, disconnect_db
+from config.mysql_db import connect_db, disconnect_db
 
 def main(page: ft.Page):
-    page.title = "MongoDB App"
+    page.title = "MySQL App"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.window.width = 400
     page.window.height = 300
@@ -67,7 +67,7 @@ def main(page: ft.Page):
         ft.Container(
             content=ft.Column([
                 ft.Text("🗄️", size=60),
-                ft.Text("MongoDB Connector", size=20, weight=ft.FontWeight.BOLD),
+                ft.Text("MySQL Connector", size=20, weight=ft.FontWeight.BOLD),
                 ft.Divider(height=30),
                 message_text,
                 ft.Divider(height=30),
