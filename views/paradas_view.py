@@ -12,7 +12,7 @@ class ParadasView:
     Vista para gestionar paradas de una ruta
     """
     
-    def __init__(self, on_back: Callable, on_create_stop: Callable, on_edit_stop: Callable = None, on_delete_stop: Callable = None):
+    def __init__(self, on_back: Callable, on_create_stop: Callable, on_edit_stop: Callable = None, on_delete_stop: Callable = None, on_view_connections: Callable = None):
         """
         Inicializa la vista de paradas
         
@@ -21,11 +21,13 @@ class ParadasView:
             on_create_stop: Callback para crear nueva parada
             on_edit_stop: Callback para editar parada existente
             on_delete_stop: Callback para eliminar parada
+            on_view_connections: Callback para ver conexiones de una parada
         """
         self.on_back = on_back
         self.on_create_stop = on_create_stop
         self.on_edit_stop = on_edit_stop
         self.on_delete_stop = on_delete_stop
+        self.on_view_connections = on_view_connections
         self.user = None
         self.ruta = None
         self.paradas = []
@@ -342,10 +344,13 @@ class ParadasView:
                 # Footer con fecha
                 ft.Row([
                     ft.Text(f"📅 {fecha_text}", size=10, color="grey"),
-                    ft.Row([
-                        ft.Text("🔗", size=12),
-                        ft.Text("Conexiones", size=10),
-                    ], spacing=3)
+                    ft.TextButton(
+                        content=ft.Row([
+                            ft.Text("🔗", size=12),
+                            ft.Text("Conexiones", size=10),
+                        ], spacing=3),
+                        on_click=lambda e, stop=parada: self._on_view_connections_click(stop)
+                    )
                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
             ], spacing=8),
             padding=15,
@@ -371,10 +376,23 @@ class ParadasView:
             dlg.open = False
             self._page_ref.update()
             
-            if e.control.text == "Editar parada":
-                self._edit_stop(parada)
-            elif e.control.text == "Eliminar parada":
-                self._confirm_delete_stop(parada)
+            # Identificar la opción por el texto del ListTile
+            if hasattr(e.control, 'title') and hasattr(e.control.title, 'value'):
+                option_text = e.control.title.value
+                if option_text == "Editar parada":
+                    self._edit_stop(parada)
+                elif option_text == "Eliminar parada":
+                    self._confirm_delete_stop(parada)
+        
+        def handle_edit(e):
+            dlg.open = False
+            self._page_ref.update()
+            self._edit_stop(parada)
+            
+        def handle_delete(e):
+            dlg.open = False
+            self._page_ref.update()
+            self._confirm_delete_stop(parada)
         
         dlg = ft.AlertDialog(
             modal=True,
@@ -383,12 +401,12 @@ class ParadasView:
                 ft.ListTile(
                     leading=ft.Icon(ft.Icons.EDIT, color="blue"),
                     title=ft.Text("Editar parada"),
-                    on_click=handle_option
+                    on_click=handle_edit
                 ),
                 ft.ListTile(
                     leading=ft.Icon(ft.Icons.DELETE, color="red"),
                     title=ft.Text("Eliminar parada"),
-                    on_click=handle_option
+                    on_click=handle_delete
                 ),
             ], tight=True),
             actions=[
@@ -639,3 +657,14 @@ class ParadasView:
         """Establece referencia a la página para actualizaciones"""
         self._page_ref = page
         print(f"DEBUG: Referencia de página establecida en ParadasView: {page is not None}")
+    
+    def _on_view_connections_click(self, parada: Parada):
+        """
+        Maneja el click del botón Ver conexiones
+        
+        Args:
+            parada: La parada seleccionada
+        """
+        print(f"DEBUG: Ver conexiones clicado para parada: {parada.nombre}")
+        if self.on_view_connections:
+            self.on_view_connections(parada)

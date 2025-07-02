@@ -11,10 +11,12 @@ from core.config import AppConfig, configure_page
 from controllers.auth_controller import AuthController
 from controllers.routes_controller import RoutesController
 from controllers.paradas_controller import ParadasController
+from controllers.conexiones_controller import ConexionesController
 from views.login_view import LoginView
 from views.register_view import RegisterView  
 from views.dashboard_view import DashboardView
 from views.paradas_view import ParadasView
+from views.conexiones_view import ConexionesView
 from models import User
 
 # Configurar logging
@@ -48,6 +50,7 @@ class ToursApp:
         self.auth_controller = AuthController()
         self.routes_controller = RoutesController()
         self.paradas_controller = ParadasController()
+        self.conexiones_controller = ConexionesController()
         
         # Inicializar vistas
         self._init_views()
@@ -81,7 +84,14 @@ class ToursApp:
             on_back=self.show_dashboard,
             on_create_stop=self.handle_create_stop,
             on_edit_stop=self.handle_edit_stop,
-            on_delete_stop=self.handle_delete_stop
+            on_delete_stop=self.handle_delete_stop,
+            on_view_connections=self.handle_view_connections
+        )
+        
+        self.conexiones_view = ConexionesView(
+            on_back=self.handle_back_to_stops,
+            on_create_connection=self.handle_create_connection,
+            on_delete_connection=self.handle_delete_connection
         )
     
     # =============== MANEJADORES DE EVENTOS ===============
@@ -526,6 +536,205 @@ class ToursApp:
             self.paradas_view.show_message(error_msg, "error")
             logger.error(error_msg)
     
+    def handle_view_connections(self, parada):
+        """
+        Maneja la visualización de conexiones de una parada
+        
+        Args:
+            parada: Parada seleccionada
+        """
+        try:
+            if not self.current_user:
+                logger.warning("Intento de ver conexiones sin autenticación")
+                self.show_login()
+                return
+            
+            # Obtener la ruta de la parada
+            ruta = None
+            for route in self.dashboard_view.routes:
+                if route.id == parada.ruta_id:
+                    ruta = route
+                    break
+            
+            if not ruta:
+                logger.error(f"No se pudo encontrar la ruta para la parada {parada.id}")
+                return
+            
+            # Obtener conexiones de la parada
+            resultado_conexiones = self.conexiones_controller.get_stop_connections(
+                parada.id, parada.ruta_id, self.current_user.id
+            )
+            
+            # Obtener paradas disponibles para conectar
+            resultado_paradas = self.conexiones_controller.get_available_stops_for_connection(
+                parada.id, parada.ruta_id, self.current_user.id
+            )
+            
+            if resultado_conexiones["success"]:
+                conexiones = resultado_conexiones["conexiones"]
+                logger.info(f"Mostrando {len(conexiones)} conexiones para parada {parada.nombre}")
+            else:
+                conexiones = []
+                logger.warning(f"No se pudieron cargar conexiones: {resultado_conexiones['message']}")
+            
+            if resultado_paradas["success"]:
+                paradas_disponibles = resultado_paradas["paradas"]
+            else:
+                paradas_disponibles = []
+                logger.warning(f"No se pudieron cargar paradas disponibles: {resultado_paradas['message']}")
+            
+            # Crear y mostrar la vista de conexiones
+            content = self.conexiones_view.create(
+                user=self.current_user, 
+                ruta=ruta, 
+                parada=parada, 
+                conexiones=conexiones,
+                paradas_disponibles=paradas_disponibles,
+                page=self.page  # Pasamos la página directamente al método create
+            )
+            self.conexiones_view.set_page_reference(self.page)  # Mantener para compatibilidad
+            self._clear_and_show(content)
+            
+            # Mostrar mensaje si hubo error al cargar
+            if not resultado_conexiones["success"]:
+                self.conexiones_view.show_message(
+                    f"⚠️ {resultado_conexiones['message']}", 
+                    "warning"
+                )
+            
+            logger.debug(f"Vista de conexiones mostrada para parada: {parada.nombre}")
+            
+        except Exception as e:
+            logger.error(f"Error al mostrar conexiones: {e}")
+            # Mostrar vista de conexiones básica en caso de error
+            content = self.conexiones_view.create(
+                user=self.current_user, 
+                ruta=ruta, 
+                parada=parada, 
+                conexiones=[],
+                paradas_disponibles=[],
+                page=self.page  # Pasamos la página directamente al método create
+            )
+            self.conexiones_view.set_page_reference(self.page)  # Establecer la referencia de página
+            self._clear_and_show(content)
+    
+    def handle_create_connection(self, parada_origen_id: int, parada_destino_id: int, distancia: float, route_id: int):
+        """
+        Maneja la creación de una nueva conexión
+        
+        Args:
+            parada_origen_id: ID de la parada origen
+            parada_destino_id: ID de la parada destino
+            distancia: Distancia entre las paradas
+            route_id: ID de la ruta
+        """
+        try:
+            if not self.current_user:
+                logger.warning("Intento de crear conexión sin autenticación")
+                self.show_login()
+                return
+            
+            # Mostrar mensaje de carga
+            self.conexiones_view.show_message("🔄 Creando conexión...", "info")
+            
+            # Crear la conexión
+            resultado = self.conexiones_controller.create_connection(
+                parada_origen_id=parada_origen_id,
+                parada_destino_id=parada_destino_id,
+                distancia=distancia,
+                route_id=route_id,
+                user_id=self.current_user.id
+            )
+            
+            if resultado["success"]:
+                # Mostrar mensaje de éxito
+                self.conexiones_view.show_message(
+                    "Conexión creada exitosamente", 
+                    "success"
+                )
+                
+                # Actualizar la lista de conexiones
+                self._refresh_connections_in_view(parada_origen_id, route_id)
+                logger.info(f"Conexión creada: {parada_origen_id} -> {parada_destino_id}")
+                
+            else:
+                # Mostrar error
+                self.conexiones_view.show_message(
+                    resultado["message"], 
+                    "error"
+                )
+                logger.warning(f"Error al crear conexión: {resultado['message']}")
+                
+        except Exception as e:
+            error_msg = "Error inesperado al crear la conexión"
+            self.conexiones_view.show_message(error_msg, "error")
+            logger.error(f"Error en crear conexión: {e}")
+    
+    def handle_delete_connection(self, parada_origen_id: int, parada_destino_id: int, route_id: int):
+        """
+        Maneja la eliminación de una conexión
+        
+        Args:
+            parada_origen_id: ID de la parada origen
+            parada_destino_id: ID de la parada destino
+            route_id: ID de la ruta
+        """
+        try:
+            if not self.current_user:
+                logger.warning("Intento de eliminar conexión sin autenticación")
+                self.show_login()
+                return
+            
+            # Mostrar mensaje de carga
+            self.conexiones_view.show_message("🔄 Eliminando conexión...", "info")
+            
+            # Eliminar la conexión
+            resultado = self.conexiones_controller.delete_connection(
+                parada_origen_id=parada_origen_id,
+                parada_destino_id=parada_destino_id,
+                route_id=route_id,
+                user_id=self.current_user.id
+            )
+            
+            if resultado["success"]:
+                # Mostrar mensaje de éxito
+                self.conexiones_view.show_message(
+                    "Conexión eliminada exitosamente", 
+                    "success"
+                )
+                
+                # Actualizar la lista de conexiones
+                self._refresh_connections_in_view(parada_origen_id, route_id)
+                logger.info(f"Conexión eliminada: {parada_origen_id} -> {parada_destino_id}")
+                
+            else:
+                # Mostrar error
+                self.conexiones_view.show_message(
+                    resultado["message"], 
+                    "error"
+                )
+                logger.warning(f"Error al eliminar conexión: {resultado['message']}")
+                
+        except Exception as e:
+            error_msg = f"Error inesperado al eliminar conexión: {str(e)}"
+            self.conexiones_view.show_message(error_msg, "error")
+            logger.error(error_msg)
+    
+    def handle_back_to_stops(self):
+        """
+        Maneja el regreso de la vista de conexiones a la vista de paradas
+        """
+        # Obtener la parada y ruta actuales de la vista de conexiones
+        parada = self.conexiones_view.parada
+        ruta = self.conexiones_view.ruta
+        
+        if parada and ruta:
+            # Volver a mostrar la vista de paradas
+            self.handle_view_stops(ruta)
+        else:
+            # Si no hay contexto, volver al dashboard
+            self.show_dashboard()
+    
     def _refresh_routes_in_dashboard(self):
         """
         Actualiza las rutas en el dashboard actual sin recargar toda la vista
@@ -582,6 +791,50 @@ class ToursApp:
             logger.error(f"Error al actualizar paradas en vista: {e}")
             # En caso de error, mostrar lista vacía
             self.paradas_view.update_stops([])
+    
+    def _refresh_connections_in_view(self, parada_id: int, route_id: int):
+        """
+        Actualiza las conexiones en la vista actual sin recargar toda la vista
+        
+        Args:
+            parada_id: ID de la parada
+            route_id: ID de la ruta
+        """
+        if not self.current_user:
+            logger.warning("Intento de actualizar conexiones sin autenticación")
+            return
+        
+        try:
+            # Obtener conexiones actualizadas
+            resultado_conexiones = self.conexiones_controller.get_stop_connections(
+                parada_id, route_id, self.current_user.id
+            )
+            
+            # Obtener paradas disponibles actualizadas
+            resultado_paradas = self.conexiones_controller.get_available_stops_for_connection(
+                parada_id, route_id, self.current_user.id
+            )
+            
+            if resultado_conexiones["success"]:
+                conexiones = resultado_conexiones["conexiones"]
+            else:
+                conexiones = []
+                logger.warning(f"Error al actualizar conexiones: {resultado_conexiones['message']}")
+            
+            if resultado_paradas["success"]:
+                paradas_disponibles = resultado_paradas["paradas"]
+            else:
+                paradas_disponibles = []
+                logger.warning(f"Error al actualizar paradas disponibles: {resultado_paradas['message']}")
+            
+            # Actualizar las conexiones en la vista
+            self.conexiones_view.update_connections(conexiones, paradas_disponibles)
+            logger.info(f"Conexiones actualizadas en vista: {len(conexiones)} conexiones")
+                
+        except Exception as e:
+            logger.error(f"Error al actualizar conexiones en vista: {e}")
+            # En caso de error, mostrar listas vacías
+            self.conexiones_view.update_connections([], [])
 
     # =============== NAVEGACIÓN ===============
     
